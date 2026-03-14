@@ -2,6 +2,8 @@
 
 This project implements **adversarial training** for learning an image encoder that preserves a **utility attribute** (e.g., smile) while hiding a **private attribute** (e.g., gender) from a downstream adversary. The encoder is a UNet; a ResNet **utility classifier** is trained to predict the utility attribute, and a ResNet **adversary** is trained to predict the private attribute. The encoder is trained to preserve utility (low classifier loss) and to fool the adversary (high adversary loss).
 
+> **Documentation:** See [docs/PROJECT_PROPOSAL.md](docs/PROJECT_PROPOSAL.md) for the team's project proposal—planned VAE encoder variants (Vanilla VAE, β-VAE, CVAE, Factor VAE, VQ-VAE), modular implementation strategy, and evaluation plan.
+
 ---
 
 ## Table of Contents
