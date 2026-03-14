@@ -1,0 +1,32 @@
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Model checkpoints (optional: remove if you want to track them)
+*.pt
+*.pth
+
+# Weights & Biases
+wandb/
+
+# OS
+.DS_Store
+Thumbs.db

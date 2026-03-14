@@ -82,19 +82,33 @@ You can change the `Subset` ranges in `adversarial_training.py` if you want to u
 
 ## Environment
 
-- **Python**: 3.9 (or compatible 3.x)
+- **Python**: 3.9+ (tested with 3.12)
 - **PyTorch** and **torchvision** (with CUDA if you use GPU)
 - **NumPy**
 - **wandb** (optional, for logging with `--use_wandb`)
+- **gdown** (optional, for CelebA download via `torchvision`)
 
-Example (adjust for your CUDA version):
+### Setup
+
+**Using requirements.txt:**
 
 ```bash
-pip install torch torchvision numpy
-pip install wandb   # optional
+python -m venv .venv
+source .venv/bin/activate   # Linux/macOS
+# .venv\Scripts\activate    # Windows
+
+pip install -r requirements.txt
 ```
 
-No `requirements.txt` is provided; install the versions that match your environment.
+For GPU support, install PyTorch with CUDA from [pytorch.org](https://pytorch.org/get-started/locally/) and replace the `torch`/`torchvision` lines in `requirements.txt` accordingly.
+
+**Optional packages:**
+
+```bash
+pip install wandb      # Weights & Biases logging
+pip install gdown      # CelebA download via torchvision
+pip install torchprofile   # MACs/FLOPs profiling (for UNet __main__)
+```
 
 ---
 
@@ -160,6 +174,10 @@ Learning rates use **CosineAnnealingLR** over the number of epochs for encoder, 
 | `--learning_rate_enc` | float | 0.001 | Adam learning rate for the encoder. |
 | `--learning_rate_clf` | float | 0.001 | Adam learning rate for the utility classifier. |
 | `--learning_rate_adv` | float | 0.001 | Adam learning rate for the adversary. |
+| `--encoder` | str | `unet` | Encoder architecture: `unet`, `cvae`, or `factor_vae`. |
+| `--vae_weight` | float | 0.1 | Weight for VAE (recon + KL) loss in ARL when using CVAE/Factor VAE. |
+| `--vae_beta` | float | 1.0 | Beta for KL weight in VAE loss. |
+| `--vae_gamma` | float | 10.0 | Gamma for Factor VAE total correlation term. |
 | `--device` | str | `"cuda"` | Device (e.g. `cuda`, `cpu`). |
 | `--data_dir` | str |  | Root directory containing the `celeba` folder. |
 | `--seed` | int | 42 | Random seed for reproducibility. |
@@ -167,10 +185,24 @@ Learning rates use **CosineAnnealingLR** over the number of epochs for encoder, 
 | `--lambda_clf` | float | 1.0 | Weight for utility vs privacy: encoder minimizes `loss_clf - lambda_clf * loss_adv`. |
 | `--exp_name` | str | `celeb` | Experiment name; used in checkpoint filenames and wandb run name. |
 
-**Example**
+**Examples**
+
+Baseline (UNet encoder):
 
 ```bash
 python adversarial_training.py --data_dir /projects/xz-group/datasets/ --exp_name my_run --num_epochs 50
+```
+
+CVAE encoder (conditions on utility label):
+
+```bash
+python adversarial_training.py --data_dir /path/to/datasets --encoder cvae --exp_name cvae_run --vae_weight 0.1 --vae_beta 1.0
+```
+
+Factor VAE encoder (disentanglement via total correlation):
+
+```bash
+python adversarial_training.py --data_dir /path/to/datasets --encoder factor_vae --exp_name factor_vae_run --vae_weight 0.1 --vae_gamma 10.0
 ```
 
 With W&B:

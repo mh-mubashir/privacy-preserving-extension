@@ -5,10 +5,19 @@ import torchvision
 import torchvision.transforms as transforms
 import numpy as np
 from torch.utils.data import DataLoader, Subset
-from models.unet import UNet
+from models.get_encoder import get_encoder
+from models.cvae import cvae_loss
+from models.factor_vae import (
+    permute_dims,
+    discriminator_loss,
+    factor_vae_encoder_loss,
+)
 from models.cifar_like.resnet import ResNet18
-import wandb
 import argparse
+try:
+    import wandb
+except ImportError:
+    wandb = None
 import torch.multiprocessing
 torch.multiprocessing.set_sharing_strategy('file_system')
 
@@ -25,7 +34,13 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--num_epochs', type=int, default=50)
     parser.add_argument('--learning_rate_enc', type=float, default=0.001)
+    parser.add_argument('--learning_rate_clf', type=float, default=0.001)
     parser.add_argument('--learning_rate_adv', type=float, default=0.001)
+    parser.add_argument('--encoder', type=str, default='unet', choices=['unet', 'cvae', 'factor_vae'],
+                        help='Encoder architecture: unet, cvae, or factor_vae')
+    parser.add_argument('--vae_weight', type=float, default=0.1, help='Weight for VAE reconstruction+KL loss in ARL')
+    parser.add_argument('--vae_beta', type=float, default=1.0, help='Beta for KL weight in VAE loss')
+    parser.add_argument('--vae_gamma', type=float, default=10.0, help='Gamma for Factor VAE total correlation term')
     parser.add_argument('--device', type=str, default="cuda")
     parser.add_argument('--data_dir', type=str, default='/projects/xz-group/datasets/')
     parser.add_argument('--seed', type=int, default=42)
@@ -46,6 +61,10 @@ if __name__ == "__main__":
     lambda_clf = args.lambda_clf
     img_size = 224
     unet_size = 'tiny'
+    encoder_name = args.encoder
+    vae_weight = args.vae_weight
+    vae_beta = args.vae_beta
+    vae_gamma = args.vae_gamma
 
     # utility task (e.g. smile) vs private task (e.g. gender) for adversary
     p_task = 20 # gender
@@ -83,8 +102,8 @@ if __name__ == "__main__":
     val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=False, num_workers=4)
     test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=4)
 
-    # Encoder (UNet: 3-channel RGB in -> 3-channel out for ResNet)
-    encoder_model = UNet(3, 3, size=unet_size)
+    # Encoder: unet, cvae, or factor_vae (3ch in -> 3ch out for ResNet)
+    encoder_model = get_encoder(encoder_name, img_size, unet_size=unet_size)
     if torch.cuda.device_count() > 1:
         encoder_model = nn.DataParallel(encoder_model)
     encoder_model = encoder_model.to(device)
@@ -106,6 +125,13 @@ if __name__ == "__main__":
     optimizer_enc = optim.Adam(encoder_model.parameters(), lr=lr_enc)
     optimizer_clf = optim.Adam(clf_model.parameters(), lr=lr_clf)
     optimizer_adv = optim.Adam(adv_model.parameters(), lr=lr_adv)
+    optimizers = {'enc': optimizer_enc, 'clf': optimizer_clf, 'adv': optimizer_adv}
+    # Factor VAE: separate optimizer for latent discriminator
+    if encoder_name == 'factor_vae':
+        disc = encoder_model.module.discriminator if hasattr(encoder_model, 'module') else encoder_model.discriminator
+        optimizer_disc = optim.Adam(disc.parameters(), lr=lr_enc)
+        optimizers['disc'] = optimizer_disc
+        scheduler_disc = optim.lr_scheduler.CosineAnnealingLR(optimizer_disc, T_max=num_epochs)
     criterion = nn.BCEWithLogitsLoss()
 
     scheduler_enc = optim.lr_scheduler.CosineAnnealingLR(optimizer_enc, T_max=num_epochs)
@@ -136,25 +162,52 @@ if __name__ == "__main__":
             targets_adv = targets[:, p_task].float().to(device)
             B = inputs.size(0)
 
-            # Encode (inputs 3ch -> encoder 3ch)
-            blurred = encoder_model(inputs)
+            # Forward: encode -> blurred/recon -> classifiers
+            if encoder_name == 'cvae':
+                recon, mu, logvar, _ = encoder_model(inputs, targets_u, return_aux=True)
+                blurred = recon
+            elif encoder_name == 'factor_vae':
+                recon, mu, logvar, z = encoder_model(inputs, return_aux=True)
+                blurred = recon
+                z_perm = permute_dims(z)
+                disc = encoder_model.module.discriminator if hasattr(encoder_model, 'module') else encoder_model.discriminator
+            else:
+                blurred = encoder_model(inputs)
             vis_imgs = blurred
 
             u_logits = clf_model(blurred).flatten()
             p_logits = adv_model(blurred).flatten()
 
             loss_clf = criterion(u_logits, targets_u)
-            loss_adv = criterion(adv_logits, targets_adv)
+            loss_adv = criterion(p_logits, targets_adv)
 
             # Update adversary: minimize loss_adv
             optimizer_adv.zero_grad()
             loss_adv.backward(retain_graph=True)
             optimizer_adv.step()
 
-            # Update encoder and utility classifier: minimize loss_clf (utility) - lambda * loss_adv (privacy)
+            # Encoder + utility classifier: ARL objective + VAE terms (for CVAE/Factor VAE)
+            arl_loss = loss_clf - lambda_clf * loss_adv
+            if encoder_name == 'cvae':
+                vae_l, _, _ = cvae_loss(recon, inputs, mu, logvar, beta=vae_beta)
+                enc_loss = arl_loss + vae_weight * vae_l
+            elif encoder_name == 'factor_vae':
+                vae_enc_loss, _, _, _ = factor_vae_encoder_loss(
+                    recon, inputs, mu, logvar, z, z_perm, disc, beta=vae_beta, gamma=vae_gamma
+                )
+                enc_loss = arl_loss + vae_weight * vae_enc_loss
+                # Train discriminator
+                optimizer_disc = optimizers['disc']
+                optimizer_disc.zero_grad()
+                loss_disc = discriminator_loss(z.detach(), z_perm.detach(), disc)
+                loss_disc.backward()
+                optimizer_disc.step()
+            else:
+                enc_loss = arl_loss
+
             optimizer_enc.zero_grad()
             optimizer_clf.zero_grad()
-            (loss_clf - lambda_clf * loss_adv).backward()
+            enc_loss.backward()
             optimizer_enc.step()
             optimizer_clf.step()
 
@@ -185,7 +238,10 @@ if __name__ == "__main__":
                 targets_adv = targets[:, p_task].float().to(device)
                 B = inputs.size(0)
 
-                blurred = encoder_model(inputs)
+                if encoder_name == 'cvae':
+                    blurred = encoder_model(inputs, targets_u)
+                else:
+                    blurred = encoder_model(inputs)
                 logits_u = clf_model(blurred).flatten()
                 adv_logits = adv_model(blurred).flatten()
 
@@ -229,7 +285,10 @@ if __name__ == "__main__":
             targets_adv = targets[:, p_task].float().to(device)
             B = inputs.size(0)
 
-            blurred = encoder_model(inputs)
+            if encoder_name == 'cvae':
+                blurred = encoder_model(inputs, targets_u)
+            else:
+                blurred = encoder_model(inputs)
             logits_u = clf_model(blurred).flatten()
             adv_logits = adv_model(blurred).flatten()
 

@@ -5,7 +5,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchprofile
+try:
+    import torchprofile
+except ImportError:
+    torchprofile = None
 
 
 class DoubleConv(nn.Module):
@@ -148,7 +151,9 @@ class UNet(nn.Module):
         
 if __name__ == '__main__':
     model = UNet(1, 1, size='super_tiny_3')
-    # print(model)
     x = torch.randn(1, 1, 224, 224)
-    macs = torchprofile.profile_macs(model, (x,))
-    print(f"MACs: {macs / 1e8:.2f} x10^8")
+    try:
+        macs = torchprofile.profile_macs(model, (x,))
+        print(f"MACs: {macs / 1e8:.2f} x10^8")
+    except NameError:
+        print("torchprofile not installed; skipping MAC profiling")
