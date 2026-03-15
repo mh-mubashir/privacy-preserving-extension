@@ -42,7 +42,15 @@ if __name__ == "__main__":
     parser.add_argument('--vae_beta', type=float, default=1.0, help='Beta for KL weight in VAE loss')
     parser.add_argument('--vae_gamma', type=float, default=10.0, help='Gamma for Factor VAE total correlation term')
     parser.add_argument('--device', type=str, default="cuda")
-    parser.add_argument('--data_dir', type=str, default='/projects/xz-group/datasets/')
+    parser.add_argument('--data_dir', type=str, default='./data',
+                        help='Root for CelebA (torchvision only). Ignored if --data_source huggingface.')
+    parser.add_argument('--data_source', type=str, default='torchvision', choices=['torchvision', 'huggingface'],
+                        help='torchvision: local celeba/. huggingface: fetch from HF (use --hf_cache_dir for cache location).')
+    parser.add_argument('--hf_cache_dir', type=str, default=None,
+                        help='[huggingface] Cache dir for HF downloads (~2GB for CelebA). e.g. /mnt/Data-1/hf_cache')
+    parser.add_argument('--download', action='store_true',
+                        help='[torchvision only] Download CelebA via gdown (may hit Google Drive quota)')
+    parser.add_argument('--num_workers', type=int, default=4, help='DataLoader workers (use 0 if issues)')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--use_wandb', action='store_true')
     parser.add_argument('--lambda_clf', type=float, default=1.0, help='Weight for utility loss (encoder minimizes loss_clf - lambda*loss_adv)')
@@ -81,26 +89,73 @@ if __name__ == "__main__":
         transforms.ToTensor(),
     ])
 
-    trainset = torchvision.datasets.CelebA(
-        root=data_dir, split='train', target_type=['attr'],
-        transform=transforms_train,
-    )
-    valset = torchvision.datasets.CelebA(
-        root=data_dir, split='valid', target_type=['attr'],
-        transform=transforms_test,
-    )
-    testset = torchvision.datasets.CelebA(
-        root=data_dir, split='test', target_type=['attr'],
-        transform=transforms_test,
-    )
+    # CelebA: utility=smile (31), privacy=gender (20) per project proposal
+    CELEBA_ATTR_ORDER = [
+        '5_o_Clock_Shadow', 'Arched_Eyebrows', 'Attractive', 'Bags_Under_Eyes', 'Bald', 'Bangs',
+        'Big_Lips', 'Big_Nose', 'Black_Hair', 'Blond_Hair', 'Blurry', 'Brown_Hair', 'Bushy_Eyebrows',
+        'Chubby', 'Double_Chin', 'Eyeglasses', 'Goatee', 'Gray_Hair', 'Heavy_Makeup', 'High_Cheekbones',
+        'Male', 'Mouth_Slightly_Open', 'Mustache', 'Narrow_Eyes', 'No_Beard', 'Oval_Face', 'Pale_Skin',
+        'Pointy_Nose', 'Receding_Hairline', 'Rosy_Cheeks', 'Sideburns', 'Smiling', 'Straight_Hair',
+        'Wavy_Hair', 'Wearing_Earrings', 'Wearing_Hat', 'Wearing_Lipstick', 'Wearing_Necklace',
+        'Wearing_Necktie', 'Young',
+    ]
 
-    train_set = Subset(trainset, range(60000))
+    data_source = getattr(args, 'data_source', 'torchvision')
+    hf_cache = getattr(args, 'hf_cache_dir', None)
+    if hf_cache:
+        import os
+        os.environ['HF_HOME'] = hf_cache
+        os.environ['HUGGINGFACE_HUB_CACHE'] = os.path.join(hf_cache, 'hub')
+        print(f"HF cache: {hf_cache}", flush=True)
+
+    if data_source == 'huggingface':
+        try:
+            from datasets import load_dataset
+        except ImportError:
+            raise ImportError("--data_source huggingface requires: pip install datasets")
+        print("Loading CelebA from Hugging Face (flwrlabs/celeba)...", flush=True)
+
+        class CelebAHFDataset(torch.utils.data.Dataset):
+            def __init__(self, hf_split, transform):
+                self.data = load_dataset("flwrlabs/celeba", split=hf_split)
+                self.transform = transform
+                self.attr_order = CELEBA_ATTR_ORDER
+            def __len__(self): return len(self.data)
+            def __getitem__(self, i):
+                row = self.data[i]
+                img = row['image']
+                if hasattr(img, 'convert'):
+                    img = img.convert('RGB')
+                img = self.transform(img)
+                attrs = torch.tensor([1.0 if row.get(k, False) else 0.0 for k in self.attr_order], dtype=torch.float32)
+                return img, attrs
+
+        trainset = CelebAHFDataset("train", transforms_train)
+        valset = CelebAHFDataset("valid", transforms_test)
+        testset = CelebAHFDataset("test", transforms_test)
+    else:
+        download_celeba = getattr(args, 'download', False)
+        trainset = torchvision.datasets.CelebA(
+            root=data_dir, split='train', target_type=['attr'],
+            transform=transforms_train, download=download_celeba,
+        )
+        valset = torchvision.datasets.CelebA(
+            root=data_dir, split='valid', target_type=['attr'],
+            transform=transforms_test, download=download_celeba,
+        )
+        testset = torchvision.datasets.CelebA(
+            root=data_dir, split='test', target_type=['attr'],
+            transform=transforms_test, download=download_celeba,
+        )
+
+    train_set = Subset(trainset, range(min(60000, len(trainset))))
     val_set = Subset(valset, range(10000))
     test_set = Subset(testset, range(10000))
 
-    train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=4)
-    val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=False, num_workers=4)
-    test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=4)
+    nw = getattr(args, 'num_workers', 4)
+    train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=nw)
+    val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=False, num_workers=nw)
+    test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=nw)
 
     # Encoder: unet, cvae, or factor_vae (3ch in -> 3ch out for ResNet)
     encoder_model = get_encoder(encoder_name, img_size, unet_size=unet_size)

@@ -8,5 +8,11 @@ numpy>=1.21.0
 # Optional: for Weights & Biases logging (--use_wandb)
 wandb>=0.15.0
 
+# Optional: for CelebA automatic download (--download)
+# gdown>=4.7.0
+
+# Optional: for CelebA automatic download (--download)
+# gdown>=4.6.0
+
 # Optional: for MACs/FLOPs profiling (models/unet.py __main__)
 # torchprofile>=0.1.0
