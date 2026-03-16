@@ -2,6 +2,14 @@
 
 This project implements **adversarial training** for learning an image encoder that preserves a **utility attribute** (e.g., smile) while hiding a **private attribute** (e.g., gender) from a downstream adversary. The encoder is a UNet; a ResNet **utility classifier** is trained to predict the utility attribute, and a ResNet **adversary** is trained to predict the private attribute. The encoder is trained to preserve utility (low classifier loss) and to fool the adversary (high adversary loss).
 
+In addition to the UNet-based encoder used inside the adversarial loop, we also train **stand‑alone disentangled VAEs on CelebA** using the [`pythae`](https://github.com/clementchadebec/Benchmark_VAE) library:
+
+- `DisentangledBetaVAE`
+- `BetaTCVAE`
+- `FactorVAE`
+
+These VAE models are trained separately (outside the ARL loop) and can be used as disentangled feature extractors or as baselines for comparison. See [docs/Pythae_VAE_Training_CelebA.md](docs/Pythae_VAE_Training_CelebA.md) for full details and results.
+
 > **Documentation:** See [docs/PROJECT_PROPOSAL.md](docs/PROJECT_PROPOSAL.md) for the team's project proposal—planned VAE encoder variants (Vanilla VAE, β-VAE, CVAE, Factor VAE, VQ-VAE), modular implementation strategy, and evaluation plan.
 
 ---
@@ -216,15 +224,20 @@ Factor VAE encoder (disentanglement via total correlation):
 python adversarial_training.py --data_dir /path/to/datasets --encoder factor_vae --exp_name factor_vae_run --vae_weight 0.1 --vae_gamma 10.0
 ```
 
-Pythae VAE variants (trained separately on CelebA):
+Pythae VAE variants (trained separately on CelebA, using the `pythae_training.py` script):
 
 ```bash
 # DisentangledBetaVAE
-python pythae_training.py --variant disentangled_betavae --data_dir /path/to/datasets --output_dir ./pythae_runs_disentangled
+python pythae_training.py --variant disentangled_betavae --data_source huggingface --hf_cache_dir ./hf_cache --img_size 64 --latent_dim 32 --beta 4.0 --batch_size 48 --num_epochs 50
 
 # BetaTCVAE
-python pythae_training.py --variant betatcvae --data_dir /path/to/datasets --output_dir ./pythae_runs_betatc
+python pythae_training.py --variant betatcvae --data_source huggingface --hf_cache_dir ./hf_cache --img_size 64 --latent_dim 32 --beta 2.0 --gamma 5.0 --learning_rate 5e-4 --batch_size 32 --num_epochs 50
+
+# FactorVAE (adversarial trainer)
+python pythae_training.py --variant factorvae --data_source huggingface --hf_cache_dir ./hf_cache --img_size 64 --latent_dim 32 --gamma 10.0 --learning_rate 5e-4 --batch_size 32 --num_epochs 50
 ```
+
+The exact hyperparameters above correspond to the stable runs documented in [docs/Pythae_VAE_Training_CelebA.md](docs/Pythae_VAE_Training_CelebA.md); you can adjust batch size and learning rate based on your GPU memory and desired trade‑offs.
 
 With W&B:
 
