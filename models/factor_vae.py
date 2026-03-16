@@ -34,7 +34,7 @@ class ConvBlock(nn.Module):
         super().__init__()
         self.conv = nn.Conv2d(in_ch, out_ch, kernel_size, stride, padding, bias=False)
         self.bn = nn.BatchNorm2d(out_ch)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU(inplace=False)  # required when using retain_graph + second backward
 
     def forward(self, x):
         return self.relu(self.bn(self.conv(x)))
@@ -47,7 +47,7 @@ class DeconvBlock(nn.Module):
         super().__init__()
         self.deconv = nn.ConvTranspose2d(in_ch, out_ch, kernel_size, stride, padding, bias=False)
         self.bn = nn.BatchNorm2d(out_ch)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU(inplace=False)  # required when using retain_graph + second backward
 
     def forward(self, x):
         return self.relu(self.bn(self.deconv(x)))
@@ -177,7 +177,9 @@ class FactorVAE(nn.Module):
 
 def vae_loss(recon, x, mu, logvar, beta=1.0):
     """VAE loss: reconstruction (BCE) + beta * KL."""
-    recon_loss = F.binary_cross_entropy(recon, x, reduction='sum') / x.size(0)
+    # Clamp recon to avoid numeric issues in BCE on GPU (input must be in [0, 1])
+    recon_clamped = recon.clamp(1e-6, 1 - 1e-6)
+    recon_loss = F.binary_cross_entropy(recon_clamped, x, reduction='sum') / x.size(0)
     kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / x.size(0)
     return recon_loss + beta * kl_loss, recon_loss, kl_loss
 

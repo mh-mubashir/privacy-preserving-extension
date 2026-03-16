@@ -2,6 +2,8 @@
 .venv/
 venv/
 env/
+.venv312/
+.venv312_cu128/
 
 # Python
 __pycache__/
@@ -30,3 +32,8 @@ wandb/
 # OS
 .DS_Store
 Thumbs.db
+
+# Misc local data
+random/
+hf_cache/
+pythae_runs/

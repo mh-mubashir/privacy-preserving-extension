@@ -88,6 +88,8 @@ You can change the `Subset` ranges in `adversarial_training.py` if you want to u
 - **wandb** (optional, for logging with `--use_wandb`)
 - **gdown** (optional, for CelebA download via `torchvision`)
 
+**Lenovo Legion (NVIDIA GPU):** If you use a Legion laptop, see [docs/GPU_SETUP_LEGION.md](docs/GPU_SETUP_LEGION.md) for the exact GPU setup used on a Legion 7 with an RTX 5080 (including the working Python 3.12 + CUDA 12.8 environment).
+
 ### Setup
 
 **Using requirements.txt:**
@@ -102,12 +104,21 @@ pip install -r requirements.txt
 
 For GPU support, install PyTorch with CUDA from [pytorch.org](https://pytorch.org/get-started/locally/) and replace the `torch`/`torchvision` lines in `requirements.txt` accordingly.
 
+On the Legion 7 + RTX 5080 used for this project, a dedicated env **`.venv312_cu128`** with Python 3.12 and CUDA 12.8 wheels was created via:
+
+```bash
+.\.venv312_cu128\Scripts\python.exe -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+```
+
+See `docs/GPU_SETUP_LEGION.md` for details on that environment and how it was verified (`torch.cuda.is_available()` and a small CUDA matmul).
+
 **Optional packages:**
 
 ```bash
 pip install wandb      # Weights & Biases logging
 pip install gdown      # CelebA download via torchvision
 pip install torchprofile   # MACs/FLOPs profiling (for UNet __main__)
+pip install pythae     # Extra VAE variants (DisentangledBetaVAE, BetaTCVAE, FactorVAE, etc.)
 ```
 
 ---
@@ -203,6 +214,16 @@ Factor VAE encoder (disentanglement via total correlation):
 
 ```bash
 python adversarial_training.py --data_dir /path/to/datasets --encoder factor_vae --exp_name factor_vae_run --vae_weight 0.1 --vae_gamma 10.0
+```
+
+Pythae VAE variants (trained separately on CelebA):
+
+```bash
+# DisentangledBetaVAE
+python pythae_training.py --variant disentangled_betavae --data_dir /path/to/datasets --output_dir ./pythae_runs_disentangled
+
+# BetaTCVAE
+python pythae_training.py --variant betatcvae --data_dir /path/to/datasets --output_dir ./pythae_runs_betatc
 ```
 
 With W&B:

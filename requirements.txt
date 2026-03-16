@@ -5,6 +5,10 @@ torch>=2.0.0
 torchvision>=0.15.0
 numpy>=1.21.0
 
+# Optional: VAE variants and training utilities (DisentangledBetaVAE, BetaTCVAE, etc.)
+# Used by pythae-based training scripts.
+pythae>=0.1.0
+
 # Optional: for Weights & Biases logging (--use_wandb)
 wandb>=0.15.0
 

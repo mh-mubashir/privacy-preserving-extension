@@ -22,6 +22,52 @@ import torch.multiprocessing
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 
+# CelebA: utility=smile (31), privacy=gender (20) per project proposal
+CELEBA_ATTR_ORDER = [
+    '5_o_Clock_Shadow', 'Arched_Eyebrows', 'Attractive', 'Bags_Under_Eyes', 'Bald', 'Bangs',
+    'Big_Lips', 'Big_Nose', 'Black_Hair', 'Blond_Hair', 'Blurry', 'Brown_Hair', 'Bushy_Eyebrows',
+    'Chubby', 'Double_Chin', 'Eyeglasses', 'Goatee', 'Gray_Hair', 'Heavy_Makeup', 'High_Cheekbones',
+    'Male', 'Mouth_Slightly_Open', 'Mustache', 'Narrow_Eyes', 'No_Beard', 'Oval_Face', 'Pale_Skin',
+    'Pointy_Nose', 'Receding_Hairline', 'Rosy_Cheeks', 'Sideburns', 'Smiling', 'Straight_Hair',
+    'Wavy_Hair', 'Wearing_Earrings', 'Wearing_Hat', 'Wearing_Lipstick', 'Wearing_Necklace',
+    'Wearing_Necktie', 'Young',
+]
+
+
+class CelebAHFDataset(torch.utils.data.Dataset):
+    """
+    Hugging Face CelebA wrapper that is picklable for DataLoader workers on Windows.
+
+    Defined at module level so multiprocessing can import it when using num_workers>0.
+    """
+
+    def __init__(self, hf_split, transform):
+        try:
+            from datasets import load_dataset
+        except ImportError:
+            raise ImportError(
+                "--data_source huggingface requires: pip install datasets"
+            )
+        self.data = load_dataset("flwrlabs/celeba", split=hf_split)
+        self.transform = transform
+        self.attr_order = CELEBA_ATTR_ORDER
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, i):
+        row = self.data[i]
+        img = row['image']
+        if hasattr(img, 'convert'):
+            img = img.convert('RGB')
+        img = self.transform(img)
+        attrs = torch.tensor(
+            [1.0 if row.get(k, False) else 0.0 for k in self.attr_order],
+            dtype=torch.float32,
+        )
+        return img, attrs
+
+
 def setup_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
@@ -55,6 +101,12 @@ if __name__ == "__main__":
     parser.add_argument('--use_wandb', action='store_true')
     parser.add_argument('--lambda_clf', type=float, default=1.0, help='Weight for utility loss (encoder minimizes loss_clf - lambda*loss_adv)')
     parser.add_argument('--exp_name', type=str, default='celeb')
+    parser.add_argument('--max_train_samples', type=int, default=60000,
+                        help='Max number of training samples (for quick sanity runs use e.g. 2048)')
+    parser.add_argument('--max_val_samples', type=int, default=10000,
+                        help='Max number of validation samples (e.g. 1024 for quick runs)')
+    parser.add_argument('--max_test_samples', type=int, default=10000,
+                        help='Max number of test samples (e.g. 1024 for quick runs)')
     args = parser.parse_args()
 
     setup_seed(args.seed)
@@ -89,17 +141,6 @@ if __name__ == "__main__":
         transforms.ToTensor(),
     ])
 
-    # CelebA: utility=smile (31), privacy=gender (20) per project proposal
-    CELEBA_ATTR_ORDER = [
-        '5_o_Clock_Shadow', 'Arched_Eyebrows', 'Attractive', 'Bags_Under_Eyes', 'Bald', 'Bangs',
-        'Big_Lips', 'Big_Nose', 'Black_Hair', 'Blond_Hair', 'Blurry', 'Brown_Hair', 'Bushy_Eyebrows',
-        'Chubby', 'Double_Chin', 'Eyeglasses', 'Goatee', 'Gray_Hair', 'Heavy_Makeup', 'High_Cheekbones',
-        'Male', 'Mouth_Slightly_Open', 'Mustache', 'Narrow_Eyes', 'No_Beard', 'Oval_Face', 'Pale_Skin',
-        'Pointy_Nose', 'Receding_Hairline', 'Rosy_Cheeks', 'Sideburns', 'Smiling', 'Straight_Hair',
-        'Wavy_Hair', 'Wearing_Earrings', 'Wearing_Hat', 'Wearing_Lipstick', 'Wearing_Necklace',
-        'Wearing_Necktie', 'Young',
-    ]
-
     data_source = getattr(args, 'data_source', 'torchvision')
     hf_cache = getattr(args, 'hf_cache_dir', None)
     if hf_cache:
@@ -109,26 +150,7 @@ if __name__ == "__main__":
         print(f"HF cache: {hf_cache}", flush=True)
 
     if data_source == 'huggingface':
-        try:
-            from datasets import load_dataset
-        except ImportError:
-            raise ImportError("--data_source huggingface requires: pip install datasets")
         print("Loading CelebA from Hugging Face (flwrlabs/celeba)...", flush=True)
-
-        class CelebAHFDataset(torch.utils.data.Dataset):
-            def __init__(self, hf_split, transform):
-                self.data = load_dataset("flwrlabs/celeba", split=hf_split)
-                self.transform = transform
-                self.attr_order = CELEBA_ATTR_ORDER
-            def __len__(self): return len(self.data)
-            def __getitem__(self, i):
-                row = self.data[i]
-                img = row['image']
-                if hasattr(img, 'convert'):
-                    img = img.convert('RGB')
-                img = self.transform(img)
-                attrs = torch.tensor([1.0 if row.get(k, False) else 0.0 for k in self.attr_order], dtype=torch.float32)
-                return img, attrs
 
         trainset = CelebAHFDataset("train", transforms_train)
         valset = CelebAHFDataset("valid", transforms_test)
@@ -148,11 +170,17 @@ if __name__ == "__main__":
             transform=transforms_test, download=download_celeba,
         )
 
-    train_set = Subset(trainset, range(min(60000, len(trainset))))
-    val_set = Subset(valset, range(10000))
-    test_set = Subset(testset, range(10000))
+    # Allow smaller subsets for quick sanity checks
+    max_train = getattr(args, 'max_train_samples', 60000)
+    max_val = getattr(args, 'max_val_samples', 10000)
+    max_test = getattr(args, 'max_test_samples', 10000)
+    train_set = Subset(trainset, range(min(max_train, len(trainset))))
+    val_set = Subset(valset, range(min(max_val, len(valset))))
+    test_set = Subset(testset, range(min(max_test, len(testset))))
 
     nw = getattr(args, 'num_workers', 4)
+    print(f"Data loaded: train={len(train_set)}, val={len(val_set)}, test={len(test_set)}, "
+          f"batch_size={batch_size}, num_workers={nw}", flush=True)
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=nw)
     val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=False, num_workers=nw)
     test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=nw)
@@ -204,20 +232,24 @@ if __name__ == "__main__":
             'u_task': u_task,
         })
 
+    num_batches = len(train_loader)
     for epoch in range(num_epochs):
         encoder_model.train()
         adv_model.train()
         clf_model.train()
         running_loss_clf = 0.0
         running_loss_adv = 0.0
+        print(f"[Epoch {epoch + 1}/{num_epochs}] Starting training ({num_batches} batches)...", flush=True)
 
         for i, (inputs, targets) in enumerate(train_loader):
+            if i == 0:
+                print("  First batch loaded, running forward/backward...", flush=True)
             inputs = inputs.to(device)
             targets_u = targets[:, u_task].float().to(device)
             targets_adv = targets[:, p_task].float().to(device)
             B = inputs.size(0)
 
-            # Forward: encode -> blurred/recon -> classifiers
+            # Forward pass for encoder + utility classifier (and VAE terms)
             if encoder_name == 'cvae':
                 recon, mu, logvar, _ = encoder_model(inputs, targets_u, return_aux=True)
                 blurred = recon
@@ -230,19 +262,26 @@ if __name__ == "__main__":
                 blurred = encoder_model(inputs)
             vis_imgs = blurred
 
+            # Utility classifier forward (encoder + clf get gradients from this)
             u_logits = clf_model(blurred).flatten()
-            p_logits = adv_model(blurred).flatten()
-
             loss_clf = criterion(u_logits, targets_u)
-            loss_adv = criterion(p_logits, targets_adv)
 
-            # Update adversary: minimize loss_adv
+            # Adversary signal for encoder: use a no-grad forward so ARL sees a fixed adversary
+            with torch.no_grad():
+                adv_logits_enc = adv_model(blurred).flatten()
+                loss_adv_enc = criterion(adv_logits_enc, targets_adv)
+
+            # Adversary update: separate forward on detached features, single backward
+            blurred_detached = blurred.detach()
+            p_logits_adv = adv_model(blurred_detached).flatten()
+            loss_adv = criterion(p_logits_adv, targets_adv)
             optimizer_adv.zero_grad()
-            loss_adv.backward(retain_graph=True)
+            loss_adv.backward()
             optimizer_adv.step()
 
             # Encoder + utility classifier: ARL objective + VAE terms (for CVAE/Factor VAE)
-            arl_loss = loss_clf - lambda_clf * loss_adv
+            # Use the no-grad adversary signal so encoder/classifier optimize against a fixed adv.
+            arl_loss = loss_clf - lambda_clf * loss_adv_enc
             if encoder_name == 'cvae':
                 vae_l, _, _ = cvae_loss(recon, inputs, mu, logvar, beta=vae_beta)
                 enc_loss = arl_loss + vae_weight * vae_l
@@ -251,12 +290,6 @@ if __name__ == "__main__":
                     recon, inputs, mu, logvar, z, z_perm, disc, beta=vae_beta, gamma=vae_gamma
                 )
                 enc_loss = arl_loss + vae_weight * vae_enc_loss
-                # Train discriminator
-                optimizer_disc = optimizers['disc']
-                optimizer_disc.zero_grad()
-                loss_disc = discriminator_loss(z.detach(), z_perm.detach(), disc)
-                loss_disc.backward()
-                optimizer_disc.step()
             else:
                 enc_loss = arl_loss
 
@@ -266,11 +299,25 @@ if __name__ == "__main__":
             optimizer_enc.step()
             optimizer_clf.step()
 
+            # Train Factor VAE discriminator AFTER encoder/classifier update to avoid
+            # modifying discriminator parameters between forward and backward passes
+            if encoder_name == 'factor_vae':
+                optimizer_disc = optimizers['disc']
+                optimizer_disc.zero_grad()
+                loss_disc = discriminator_loss(z.detach(), z_perm.detach(), disc)
+                loss_disc.backward()
+                optimizer_disc.step()
+
             running_loss_clf += loss_clf.item()
             running_loss_adv += loss_adv.item()
 
-            if (i + 1) % 100 == 0:
-                print(f'Epoch [{epoch + 1}/{num_epochs}], Step [{i + 1}/{len(train_loader)}], Loss_clf: {running_loss_clf / 100:.4f}, Loss_adv: {running_loss_adv / 100:.4f}')
+            # Log first batch immediately, then every 10 steps (short runs) or every 100 (long runs)
+            step = i + 1
+            log_interval = 10 if num_batches <= 500 else 100
+            if step == 1:
+                print(f'  Step [1/{num_batches}] loss_clf: {running_loss_clf:.4f} loss_adv: {running_loss_adv:.4f}', flush=True)
+            elif step % log_interval == 0:
+                print(f'  Step [{step}/{num_batches}] loss_clf: {running_loss_clf / log_interval:.4f} loss_adv: {running_loss_adv / log_interval:.4f}', flush=True)
                 running_loss_clf = 0.0
                 running_loss_adv = 0.0
 
