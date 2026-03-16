@@ -246,6 +246,32 @@ Both models aim for **disentangled latent representations**, but they enforce th
     - We are intentionally trading off reconstruction quality to enforce **more factorized, independent latent variables**.
   - The crucial point is that training remains **numerically stable** and convergent after dialing down β/γ and the learning rate.
 
+### FactorVAE Results
+
+- **Variant**: `factorvae`
+
+- **Key training stats**
+  - Epoch 1:
+    - Train loss ≈ **213.4768**
+    - Eval loss ≈ **162.6324**
+  - Epoch 5:
+    - Train loss ≈ **155.6029**
+    - Eval loss ≈ **152.3560**
+  - Epoch 10:
+    - Train loss ≈ **152.6383**
+    - Eval loss ≈ **152.3108**
+  - Mid training (~epoch 25–35):
+    - Train loss ≈ **151.0361–150.0931**
+    - Eval loss ≈ **151.4184–146.0342**
+  - Final epoch (50/50):
+    - Train loss ≈ **150.3861**
+    - Eval loss ≈ **150.5141**
+
+- **Interpretation**
+  - Loss drops quickly in the first few epochs and then stabilizes in the **~150–151** range.
+  - Train and eval losses remain close at the end (final gap ≈ 0.13), indicating stable training with the autoencoder + discriminator setup.
+  - Final losses sit **between** DisentangledBetaVAE (~102) and BetaTCVAE (~163), consistent with an adversarial total-correlation penalty that is substantial but not as heavy as the BetaTCVAE configuration we used.
+
 ---
 
 ## Comparative Interpretation and Effort
