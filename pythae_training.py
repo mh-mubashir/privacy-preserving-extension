@@ -24,9 +24,11 @@ from pythae.models import (
     DisentangledBetaVAEConfig,
     BetaTCVAE,
     BetaTCVAEConfig,
+    FactorVAE,
+    FactorVAEConfig,
 )
 from pythae.pipelines import TrainingPipeline
-from pythae.trainers import BaseTrainerConfig
+from pythae.trainers import AdversarialTrainerConfig, BaseTrainerConfig
 
 
 def build_celeba_dataloaders_torchvision(
@@ -158,6 +160,13 @@ def build_pythae_model(
             gamma=gamma,
         )
         model = BetaTCVAE(model_config=config)
+    elif variant == "factorvae":
+        config = FactorVAEConfig(
+            input_dim=input_dim,
+            latent_dim=latent_dim,
+            gamma=gamma,
+        )
+        model = FactorVAE(model_config=config)
     else:
         raise ValueError(f"Unknown pythae variant: {variant}")
 
@@ -166,13 +175,13 @@ def build_pythae_model(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Train DisentangledBetaVAE or BetaTCVAE on CelebA using pythae"
+        description="Train DisentangledBetaVAE, BetaTCVAE, or FactorVAE on CelebA using pythae"
     )
     parser.add_argument(
         "--variant",
         type=str,
         default="disentangled_betavae",
-        choices=["disentangled_betavae", "betatcvae"],
+        choices=["disentangled_betavae", "betatcvae", "factorvae"],
         help="Which pythae model to train",
     )
     parser.add_argument("--data_dir", type=str, default="./data")
@@ -184,7 +193,7 @@ def main():
         "--gamma",
         type=float,
         default=10.0,
-        help="Total correlation weight (BetaTCVAE only)",
+        help="Total correlation weight (BetaTCVAE / FactorVAE)",
     )
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--num_epochs", type=int, default=50)
@@ -278,6 +287,17 @@ def main():
         per_device_train_batch_size=args.batch_size,
         per_device_eval_batch_size=args.batch_size,
     )
+
+    # FactorVAE is trained with the adversarial trainer (autoencoder + discriminator)
+    if args.variant == "factorvae":
+        training_config = AdversarialTrainerConfig(
+            output_dir=str(Path(args.output_dir) / args.variant),
+            num_epochs=args.num_epochs,
+            per_device_train_batch_size=args.batch_size,
+            per_device_eval_batch_size=args.batch_size,
+            autoencoder_learning_rate=args.learning_rate,
+            discriminator_learning_rate=args.learning_rate,
+        )
 
     pipeline = TrainingPipeline(
         training_config=training_config,

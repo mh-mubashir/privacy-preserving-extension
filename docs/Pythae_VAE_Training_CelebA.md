@@ -1,6 +1,6 @@
-### Pythae VAE Training on CelebA (DisentangledBetaVAE & BetaTCVAE)
+### Pythae VAE Training on CelebA (DisentangledBetaVAE, BetaTCVAE, FactorVAE)
 
-This document summarizes how we trained two Pythae VAE variants on CelebA, the exact configurations we used, and what the training results indicate.
+This document summarizes how we trained two Pythae VAE variants on CelebA, plus how to run a third (FactorVAE) using the same training script.
 
 ---
 
@@ -40,6 +40,7 @@ This document summarizes how we trained two Pythae VAE variants on CelebA, the e
   3. Construct the **Pythae model**:
      - `DisentangledBetaVAE` with `DisentangledBetaVAEConfig`, or
      - `BetaTCVAE` with `BetaTCVAEConfig`.
+     - `FactorVAE` with `FactorVAEConfig`.
   4. Create a `BaseTrainerConfig` and a `TrainingPipeline`.
   5. Convert the dataloaders into large tensors `train_data` / `eval_data` and call the pipeline:
      - `pipeline(train_data=train_data, eval_data=val_data)`.
@@ -78,6 +79,21 @@ This document summarizes how we trained two Pythae VAE variants on CelebA, the e
       --latent_dim 32 `
       --beta 2.0 `
       --gamma 5.0 `
+      --learning_rate 0.0005 `
+      --batch_size 32 `
+      --num_epochs 50
+    ```
+
+  - **FactorVAE** (run with the same script):
+
+    ```powershell
+    .\.venv312_cu128\Scripts\python pythae_training.py `
+      --variant factorvae `
+      --data_source huggingface `
+      --hf_cache_dir ./.hf_cache `
+      --img_size 64 `
+      --latent_dim 32 `
+      --gamma 10.0 `
       --learning_rate 0.0005 `
       --batch_size 32 `
       --num_epochs 50
@@ -135,6 +151,16 @@ This document summarizes how we trained two Pythae VAE variants on CelebA, the e
     - **LR = 5e‑4**: smaller learning rate for smoother, stable optimization.
     - **Batch size 32**: fits safely in VRAM and gives enough gradient signal for the more complex TC‑based objective.
 
+### FactorVAE
+
+- **Config (key knobs)**
+  - `gamma`: total correlation penalty strength (larger gamma = stronger independence pressure)
+  - Reconstruction loss is typically MSE with Pythae defaults
+
+- **Why this variant?**
+  - FactorVAE is another disentangling VAE approach that trains a discriminator to estimate and penalize total correlation, encouraging **independent latent factors**.
+  - In practice, it often needs more careful tuning (especially `gamma` and `learning_rate`) to remain stable.
+
 ---
 
 ## What’s Unique About These VAE Variants
@@ -151,6 +177,10 @@ This document summarizes how we trained two Pythae VAE variants on CelebA, the e
   - This often achieves **stronger factorization** than β‑VAE, but:
     - Is more numerically fragile.
     - Usually yields **higher total loss** and slightly worse reconstructions, because it spends capacity on independence constraints.
+
+- **FactorVAE**
+  - Targets disentanglement by explicitly penalizing total correlation, using a discriminator-based estimate during training.
+  - Similar goal to BetaTCVAE (factorized latents), but with a different training mechanism.
 
 Both models aim for **disentangled latent representations**, but they enforce this via different mechanisms (KL upweighting vs explicit TC penalty).
 
