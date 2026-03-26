@@ -263,10 +263,8 @@ def beta_tc_vae_loss(
     """
     B, D = z.size()
 
-    # Reconstruction: BCE per pixel, sum over pixels, mean over batch
-    recon_c = recon.clamp(1e-6, 1 - 1e-6)
-    x_c     = x.clamp(0.0, 1.0)
-    recon_loss = F.binary_cross_entropy(recon_c, x_c, reduction="sum") / B
+    # Reconstruction: MSE (numerically stable, no [0,1] range requirement on GPU)
+    recon_loss = F.mse_loss(recon, x.clamp(0.0, 1.0), reduction="sum") / B
 
     # log q(z|x):  (B, D) -> (B,)
     log_q_zx = _log_density_gaussian(z, mu, logvar).sum(dim=1)

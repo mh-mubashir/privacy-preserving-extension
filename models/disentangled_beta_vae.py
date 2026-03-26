@@ -269,9 +269,8 @@ def disentangled_beta_vae_loss(
         total_loss, recon_loss, kl_loss
     """
     B = x.size(0)
-    recon_c    = recon.clamp(1e-6, 1 - 1e-6)
-    x_c        = x.clamp(0.0, 1.0)
-    recon_loss = F.binary_cross_entropy(recon_c, x_c, reduction="sum") / B
+    # Reconstruction: MSE (numerically stable, no [0,1] range requirement on GPU)
+    recon_loss = F.mse_loss(recon, x.clamp(0.0, 1.0), reduction="sum") / B
     kl_loss    = (-0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())) / B
     total_loss = recon_loss + gamma * (kl_loss - C).abs()
     return total_loss, recon_loss, kl_loss
