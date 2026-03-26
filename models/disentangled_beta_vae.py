@@ -215,7 +215,7 @@ class DisentangledBetaVAE(nn.Module):
         self.decoder = DisentangledBetaDecoder(self.util_latent_dim, out_channels)
 
     def reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
-        std = torch.exp(0.5 * logvar)
+        std = torch.exp(0.5 * logvar.clamp(-4, 4))
         eps = torch.randn_like(std)
         return mu + eps * std
 

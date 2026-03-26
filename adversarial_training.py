@@ -300,9 +300,9 @@ if __name__ == "__main__":
                 # Full TC decomposition is used for standalone pythae training only.
                 B_enc = recon.size(0)
                 recon_l = F.mse_loss(recon, inputs, reduction='sum') / B_enc
-                kl_l = -0.5 * torch.sum(
-                    1 + logvar.clamp(-10, 10) - mu.pow(2) - logvar.clamp(-10, 10).exp()
-                ) / B_enc
+                lv = logvar.clamp(-4, 4)
+                mu_c = mu.clamp(-10, 10)
+                kl_l = -0.5 * torch.sum(1 + lv - mu_c.pow(2) - lv.exp()) / B_enc
                 vae_l = recon_l + vae_beta * kl_l
                 enc_loss = arl_loss + vae_weight * vae_l
             else:
@@ -311,8 +311,15 @@ if __name__ == "__main__":
             optimizer_enc.zero_grad()
             optimizer_clf.zero_grad()
             enc_loss.backward()
-            optimizer_enc.step()
-            optimizer_clf.step()
+            torch.nn.utils.clip_grad_norm_(encoder_model.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(clf_model.parameters(), max_norm=1.0)
+            if torch.isnan(enc_loss):
+                print(f"  WARNING: NaN enc_loss at step {i+1}, skipping update", flush=True)
+                optimizer_enc.zero_grad()
+                optimizer_clf.zero_grad()
+            else:
+                optimizer_enc.step()
+                optimizer_clf.step()
 
             # Train Factor VAE discriminator AFTER encoder/classifier update to avoid
             # modifying discriminator parameters between forward and backward passes
