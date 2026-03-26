@@ -294,13 +294,15 @@ if __name__ == "__main__":
                     recon, inputs, mu, logvar, z, z_perm, disc, beta=vae_beta, gamma=vae_gamma
                 )
                 enc_loss = arl_loss + vae_weight * vae_enc_loss
-            elif encoder_name == 'beta_tc_vae':
-                from models.beta_tc_vae import beta_tc_vae_loss
-                vae_l, _, _, _, _ = beta_tc_vae_loss(recon, inputs, mu, logvar, z, beta=vae_beta)
-                enc_loss = arl_loss + vae_weight * vae_l
-            elif encoder_name == 'disentangled_beta_vae':
-                from models.disentangled_beta_vae import disentangled_beta_vae_loss
-                vae_l, _, _ = disentangled_beta_vae_loss(recon, inputs, mu, logvar, gamma=vae_beta)
+            elif encoder_name in ('beta_tc_vae', 'disentangled_beta_vae'):
+                # Simple stable VAE loss (MSE recon + beta*KL) for ARL loop stability.
+                # Full TC decomposition is used for standalone pythae training only.
+                B_enc = recon.size(0)
+                recon_l = F.mse_loss(recon, inputs, reduction='sum') / B_enc
+                kl_l = -0.5 * torch.sum(
+                    1 + logvar.clamp(-10, 10) - mu.pow(2) - logvar.clamp(-10, 10).exp()
+                ) / B_enc
+                vae_l = recon_l + vae_beta * kl_l
                 enc_loss = arl_loss + vae_weight * vae_l
             else:
                 enc_loss = arl_loss
