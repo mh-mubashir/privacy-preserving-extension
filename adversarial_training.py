@@ -82,8 +82,9 @@ if __name__ == "__main__":
     parser.add_argument('--learning_rate_enc', type=float, default=0.001)
     parser.add_argument('--learning_rate_clf', type=float, default=0.001)
     parser.add_argument('--learning_rate_adv', type=float, default=0.001)
-    parser.add_argument('--encoder', type=str, default='unet', choices=['unet', 'cvae', 'factor_vae'],
-                        help='Encoder architecture: unet, cvae, or factor_vae')
+    parser.add_argument('--encoder', type=str, default='unet',
+                        choices=['unet', 'cvae', 'factor_vae', 'beta_tc_vae', 'disentangled_beta_vae'],
+                        help='Encoder architecture: unet, cvae, factor_vae, beta_tc_vae, disentangled_beta_vae')
     parser.add_argument('--vae_weight', type=float, default=0.1, help='Weight for VAE reconstruction+KL loss in ARL')
     parser.add_argument('--vae_beta', type=float, default=1.0, help='Beta for KL weight in VAE loss')
     parser.add_argument('--vae_gamma', type=float, default=10.0, help='Gamma for Factor VAE total correlation term')
@@ -258,6 +259,9 @@ if __name__ == "__main__":
                 blurred = recon
                 z_perm = permute_dims(z)
                 disc = encoder_model.module.discriminator if hasattr(encoder_model, 'module') else encoder_model.discriminator
+            elif encoder_name in ('beta_tc_vae', 'disentangled_beta_vae'):
+                recon, mu, logvar, z = encoder_model(inputs, return_aux=True)
+                blurred = recon
             else:
                 blurred = encoder_model(inputs)
             vis_imgs = blurred
@@ -290,6 +294,14 @@ if __name__ == "__main__":
                     recon, inputs, mu, logvar, z, z_perm, disc, beta=vae_beta, gamma=vae_gamma
                 )
                 enc_loss = arl_loss + vae_weight * vae_enc_loss
+            elif encoder_name == 'beta_tc_vae':
+                from models.beta_tc_vae import beta_tc_vae_loss
+                vae_l, _, _, _, _ = beta_tc_vae_loss(recon, inputs, mu, logvar, z, beta=vae_beta)
+                enc_loss = arl_loss + vae_weight * vae_l
+            elif encoder_name == 'disentangled_beta_vae':
+                from models.disentangled_beta_vae import disentangled_beta_vae_loss
+                vae_l, _, _ = disentangled_beta_vae_loss(recon, inputs, mu, logvar, gamma=vae_beta)
+                enc_loss = arl_loss + vae_weight * vae_l
             else:
                 enc_loss = arl_loss
 
@@ -342,6 +354,8 @@ if __name__ == "__main__":
 
                 if encoder_name == 'cvae':
                     blurred = encoder_model(inputs, targets_u)
+                elif encoder_name in ('beta_tc_vae', 'disentangled_beta_vae', 'factor_vae'):
+                    blurred = encoder_model(inputs)
                 else:
                     blurred = encoder_model(inputs)
                 logits_u = clf_model(blurred).flatten()
@@ -389,6 +403,8 @@ if __name__ == "__main__":
 
             if encoder_name == 'cvae':
                 blurred = encoder_model(inputs, targets_u)
+            elif encoder_name in ('beta_tc_vae', 'disentangled_beta_vae', 'factor_vae'):
+                blurred = encoder_model(inputs)
             else:
                 blurred = encoder_model(inputs)
             logits_u = clf_model(blurred).flatten()
