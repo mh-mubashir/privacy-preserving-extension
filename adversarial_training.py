@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
@@ -82,8 +83,9 @@ if __name__ == "__main__":
     parser.add_argument('--learning_rate_enc', type=float, default=0.001)
     parser.add_argument('--learning_rate_clf', type=float, default=0.001)
     parser.add_argument('--learning_rate_adv', type=float, default=0.001)
-    parser.add_argument('--encoder', type=str, default='unet', choices=['unet', 'cvae', 'factor_vae'],
-                        help='Encoder architecture: unet, cvae, or factor_vae')
+    parser.add_argument('--encoder', type=str, default='unet',
+                        choices=['unet', 'vanilla_vae', 'beta_vae', 'cvae', 'factor_vae'],
+                        help='Encoder architecture: unet, vanilla_vae, beta_vae, cvae, factor_vae')
     parser.add_argument('--vae_weight', type=float, default=0.1, help='Weight for VAE reconstruction+KL loss in ARL')
     parser.add_argument('--vae_beta', type=float, default=1.0, help='Beta for KL weight in VAE loss')
     parser.add_argument('--vae_gamma', type=float, default=10.0, help='Gamma for Factor VAE total correlation term')
@@ -258,6 +260,9 @@ if __name__ == "__main__":
                 blurred = recon
                 z_perm = permute_dims(z)
                 disc = encoder_model.module.discriminator if hasattr(encoder_model, 'module') else encoder_model.discriminator
+            elif encoder_name in ('vanilla_vae', 'beta_vae'):
+                recon, mu, logvar, z = encoder_model(inputs, return_aux=True)
+                blurred = recon
             else:
                 blurred = encoder_model(inputs)
             vis_imgs = blurred
@@ -290,14 +295,29 @@ if __name__ == "__main__":
                     recon, inputs, mu, logvar, z, z_perm, disc, beta=vae_beta, gamma=vae_gamma
                 )
                 enc_loss = arl_loss + vae_weight * vae_enc_loss
+            elif encoder_name in ('vanilla_vae', 'beta_vae'):
+                B_enc   = recon.size(0)
+                lv      = logvar.clamp(-4, 4)
+                mu_c    = mu.clamp(-10, 10)
+                recon_l = F.mse_loss(recon, inputs, reduction='sum') / B_enc
+                kl_l    = -0.5 * torch.sum(1 + lv - mu_c.pow(2) - lv.exp()) / B_enc
+                vae_l   = recon_l + vae_beta * kl_l
+                enc_loss = arl_loss + vae_weight * vae_l
             else:
                 enc_loss = arl_loss
 
             optimizer_enc.zero_grad()
             optimizer_clf.zero_grad()
             enc_loss.backward()
-            optimizer_enc.step()
-            optimizer_clf.step()
+            torch.nn.utils.clip_grad_norm_(encoder_model.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(clf_model.parameters(), max_norm=1.0)
+            if torch.isnan(enc_loss):
+                print(f"  WARNING: NaN enc_loss at step {i+1}, skipping update", flush=True)
+                optimizer_enc.zero_grad()
+                optimizer_clf.zero_grad()
+            else:
+                optimizer_enc.step()
+                optimizer_clf.step()
 
             # Train Factor VAE discriminator AFTER encoder/classifier update to avoid
             # modifying discriminator parameters between forward and backward passes
