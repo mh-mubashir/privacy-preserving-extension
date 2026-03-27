@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -381,6 +382,25 @@ if __name__ == "__main__":
         val_acc = 100.0 * val_correct / val_n
         val_acc_adv = 100.0 * val_correct_adv / val_n
         print(f'Epoch [{epoch + 1}/{num_epochs}], Val Acc: {val_acc:.2f}, Val Acc Adv: {val_acc_adv:.2f}, Val Loss: {val_loss_sum / val_n:.4f}, Val Loss Adv: {val_loss_adv_sum / val_n:.4f}')
+
+        # Save reconstruction grid: 8 originals (top row) vs 8 reconstructions (bottom row)
+        vis_dir = os.path.join(os.path.dirname(os.path.abspath(args.exp_name + '.pt')), 'visuals')
+        try:
+            vis_dir = os.path.join(os.getcwd(), 'visuals')
+            os.makedirs(vis_dir, exist_ok=True)
+            with torch.no_grad():
+                sample_in  = inputs[:8].cpu()
+                if encoder_name == 'cvae':
+                    sample_out = encoder_model(inputs[:8], targets_u[:8]).cpu()
+                else:
+                    sample_out = encoder_model(inputs[:8]).cpu()
+            grid = torchvision.utils.make_grid(
+                torch.cat([sample_in, sample_out], dim=0), nrow=8, normalize=True, value_range=(0, 1)
+            )
+            torchvision.utils.save_image(grid, os.path.join(vis_dir, f'{args.exp_name}_epoch{epoch+1:02d}.png'))
+            print(f'  Saved reconstruction grid -> visuals/{args.exp_name}_epoch{epoch+1:02d}.png', flush=True)
+        except Exception as e:
+            print(f'  Warning: could not save visual grid: {e}', flush=True)
 
         if args.use_wandb:
             imgs = torchvision.utils.make_grid(inputs[:8].detach().cpu())
