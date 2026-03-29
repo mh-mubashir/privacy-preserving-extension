@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import argparse
-import vqvaeUtils as utils
+import models.vqvaeUtils as utils
 
 # code modified from https://github.com/MishaLaskin/vqvae/tree/master
 
