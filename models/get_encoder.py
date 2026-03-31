@@ -6,13 +6,15 @@ ResNet classifiers. VAE-family encoders also support return_aux=True
 to return (recon, mu, logvar, z).
 
 Encoders:
-- unet:         Baseline UNet (deterministic)
-- vanilla_vae:  Standard VAE — Kingma & Welling 2013, beta=1 ELBO        [Member 1]
-- beta_vae:     Beta-VAE — Higgins et al. 2017, beta>1 disentanglement    [Member 1]
-- residual_vae: VAE with residual encoder blocks                           [Member 1]
-- cvae:         Conditional VAE — conditions on utility label              [Member 2]
-- factor_vae:   Factor VAE — total correlation penalty                     [Member 2]
-- vq_vae:       VQ-VAE — discrete codebook latent space                   [Member 3]
+- unet:                  Baseline UNet (deterministic)
+- vanilla_vae:           Standard VAE — Kingma & Welling 2013, beta=1 ELBO        [Member 1]
+- beta_vae:              Beta-VAE — Higgins et al. 2017, beta>1 disentanglement    [Member 1]
+- residual_vae:          VAE with residual encoder blocks                           [Member 1]
+- cvae:                  Conditional VAE — conditions on utility label              [Member 2]
+- factor_vae:            Factor VAE — total correlation penalty via discriminator   [Member 2]
+- beta_tc_vae:           Beta-TC VAE — explicit total correlation penalty           [Member 2]
+- disentangled_beta_vae: Beta-VAE with skip connections and privacy bottleneck      [Member 2]
+- vq_vae:                VQ-VAE — discrete codebook latent space                   [Member 3]
 """
 
 import torch.nn as nn
@@ -23,6 +25,8 @@ from .beta_vae import BetaVAE
 from .residual_vae import ResidualVAE
 from .cvae import CVAE
 from .factor_vae import FactorVAE
+from .beta_tc_vae import BetaTCVAE
+from .disentangled_beta_vae import DisentangledBetaVAE
 from .vqvae_wrapper import VQVAEWrapper
 
 
@@ -32,7 +36,7 @@ def get_encoder(encoder_name, img_size=224, **kwargs):
 
     Args:
         encoder_name : one of unet / vanilla_vae / beta_vae / residual_vae /
-                       cvae / factor_vae / vq_vae
+                       cvae / factor_vae / beta_tc_vae / disentangled_beta_vae / vq_vae
         img_size     : spatial resolution (default 224)
         **kwargs     : latent_dim, beta, unet_size, etc.
 
@@ -80,6 +84,20 @@ def get_encoder(encoder_name, img_size=224, **kwargs):
             img_size=img_size,
         )
 
+    elif name == "beta_tc_vae":
+        return BetaTCVAE(
+            in_channels=3, out_channels=3,
+            latent_dim=kwargs.get("latent_dim", 256),
+            img_size=img_size,
+        )
+
+    elif name == "disentangled_beta_vae":
+        return DisentangledBetaVAE(
+            in_channels=3, out_channels=3,
+            latent_dim=kwargs.get("latent_dim", 256),
+            img_size=img_size,
+        )
+
     elif name == "vq_vae":
         return VQVAEWrapper(
             in_channels=3, out_channels=3,
@@ -96,5 +114,5 @@ def get_encoder(encoder_name, img_size=224, **kwargs):
         raise ValueError(
             f"Unknown encoder '{encoder_name}'. "
             f"Choose from: unet, vanilla_vae, beta_vae, residual_vae, "
-            f"cvae, factor_vae, vq_vae"
+            f"cvae, factor_vae, beta_tc_vae, disentangled_beta_vae, vq_vae"
         )
