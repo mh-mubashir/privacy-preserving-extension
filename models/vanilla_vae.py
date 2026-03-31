@@ -16,27 +16,27 @@ import torch.nn.functional as F
 class ConvBlock(nn.Module):
     def __init__(self, in_ch, out_ch, stride=1):
         super().__init__()
-        self.net = nn.Sequential(
+        self.block = nn.Sequential(
             nn.Conv2d(in_ch, out_ch, 3, stride=stride, padding=1, bias=False),
             nn.BatchNorm2d(out_ch),
             nn.ReLU(),
         )
 
     def forward(self, x):
-        return self.net(x)
+        return self.block(x)
 
 
 class DeconvBlock(nn.Module):
     def __init__(self, in_ch, out_ch):
         super().__init__()
-        self.net = nn.Sequential(
+        self.block = nn.Sequential(
             nn.ConvTranspose2d(in_ch, out_ch, 4, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(out_ch),
             nn.ReLU(),
         )
 
     def forward(self, x):
-        return self.net(x)
+        return self.block(x)
 
 
 class VanillaVAEEncoder(nn.Module):
@@ -66,12 +66,12 @@ class VanillaVAEDecoder(nn.Module):
         self.deconv2 = DeconvBlock(256, 128)
         self.deconv3 = DeconvBlock(128, 64)
         self.deconv4 = DeconvBlock(64,  32)
-        self.out     = nn.ConvTranspose2d(32, out_channels, 4, stride=2, padding=1)
+        self.deconv5 = nn.ConvTranspose2d(32, out_channels, 4, stride=2, padding=1)
 
     def forward(self, z):
         h = F.relu(self.fc(z)).view(-1, 512, 7, 7)
         h = self.deconv4(self.deconv3(self.deconv2(self.deconv1(h))))
-        return torch.sigmoid(self.out(h))
+        return torch.sigmoid(self.deconv5(h))
 
 
 class VanillaVAE(nn.Module):
