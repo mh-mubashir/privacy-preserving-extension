@@ -18,5 +18,14 @@ wandb>=0.15.0
 # Optional: for CelebA automatic download (--download)
 # gdown>=4.6.0
 
+# Evaluation metrics (evaluate.py)
+scikit-learn>=1.0.0
+
+# FLOPs/MACs profiling (compute_flops.py)
+thop>=0.1.0
+
+# HuggingFace datasets for CelebA loading
+datasets>=2.0.0
+
 # Optional: for MACs/FLOPs profiling (models/unet.py __main__)
 # torchprofile>=0.1.0
