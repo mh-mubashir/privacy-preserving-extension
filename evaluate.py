@@ -115,6 +115,40 @@ def build_test_loader(args):
 
 # ── Metrics ──────────────────────────────────────────────────────────────────
 
+DEFAULT_K_LEVELS = [70, 75, 80, 85]
+
+
+def compute_privacy_at_k_utility(labels_u, probs_u, labels_p, probs_p, k_levels=None):
+    """
+    For each K in k_levels, sweep classifier thresholds to find the operating
+    point where utility accuracy >= K%. Among all such thresholds, report the
+    one with the lowest privacy accuracy (most private operating point).
+
+    Returns a dict: {k: {"threshold": t, "utility_acc": u, "privacy_acc": p}}
+    If a model cannot reach K% utility at any threshold, that K is marked None.
+    """
+    if k_levels is None:
+        k_levels = DEFAULT_K_LEVELS
+    thresholds = np.linspace(0.01, 0.99, 200)
+    results = {}
+    for k in k_levels:
+        best = None
+        for t in thresholds:
+            preds_u = (probs_u >= t).astype(float)
+            preds_p = (probs_p >= t).astype(float)
+            u_acc = float((preds_u == labels_u).mean() * 100)
+            p_acc = float((preds_p == labels_p).mean() * 100)
+            if u_acc >= k:
+                if best is None or p_acc < best["privacy_acc"]:
+                    best = {
+                        "threshold":   round(float(t), 3),
+                        "utility_acc": round(u_acc, 2),
+                        "privacy_acc": round(p_acc, 2),
+                    }
+        results[k] = best
+    return results
+
+
 def compute_nag(utility_acc, privacy_acc):
     """
     Normalised Accuracy Gap (NAG).
@@ -196,6 +230,7 @@ def evaluate_one(encoder_name, exp_name, checkpoint_dir, test_loader, device):
     util_f1  = float(f1_score(lu, du, zero_division=0)) if HAS_SKLEARN else None
     cm_u = confusion_matrix(lu, du).tolist() if HAS_SKLEARN else None
     cm_p = confusion_matrix(lp, dp).tolist() if HAS_SKLEARN else None
+    pak  = compute_privacy_at_k_utility(lu, pu, lp, pp)
 
     # Print
     print(f"\n  Samples : {n}")
@@ -225,6 +260,18 @@ def evaluate_one(encoder_name, exp_name, checkpoint_dir, test_loader, device):
         print(f"    Female {cm_p[0][0]:6d}   {cm_p[0][1]:6d}")
         print(f"    Male   {cm_p[1][0]:6d}   {cm_p[1][1]:6d}")
 
+    print(f"\n  Privacy at K% Utility  [lower privacy% = better at each K]")
+    print(f"  {'K% Utility':>11}  {'Threshold':>10}  {'Actual Util%':>13}  {'Privacy%':>10}  {'Status':>12}")
+    print(f"  {'-'*62}")
+    for k, res in pak.items():
+        if res is None:
+            print(f"  {k:>10}%  {'—':>10}  {'—':>13}  {'—':>10}  {'unreachable':>12}")
+        else:
+            gap  = res['privacy_acc'] - 50.0
+            note = "good" if gap < 5 else "ok" if gap < 15 else "leaking"
+            print(f"  {k:>10}%  {res['threshold']:>10.3f}  "
+                  f"{res['utility_acc']:>12.2f}%  {res['privacy_acc']:>9.2f}%  {note:>12}")
+
     return {
         "encoder":     encoder_name,
         "exp_name":    exp_name,
@@ -237,6 +284,7 @@ def evaluate_one(encoder_name, exp_name, checkpoint_dir, test_loader, device):
         "nag":         nag,
         "cm_utility":  cm_u,
         "cm_privacy":  cm_p,
+        "privacy_at_k_utility": {str(k): v for k, v in pak.items()},
     }
 
 
