@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import argparse
-import models.vqvaeUtils as utils
+import utilsVqvae as utils
 
 # code modified from https://github.com/MishaLaskin/vqvae/tree/master
 
@@ -32,6 +32,7 @@ class VQVAE(nn.Module):
             print('original data shape:', x.shape)
             print('encoded data shape:', z_e.shape)
             print('recon data shape:', x_hat.shape)
+            # FIX 4: removed assert False, just return early after printing
             return embedding_loss, x_hat, perplexity
 
         return embedding_loss, x_hat, perplexity
@@ -71,10 +72,18 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
         kernel = 4
         stride = 2
+        # Original 2 downsampling layers: 224 -> 112 -> 56
+        # Added 3 more downsampling layers: 56 -> 28 -> 14 -> 7
         self.conv_stack = nn.Sequential(
-            nn.Conv2d(in_dim, h_dim // 2, kernel_size=kernel, stride=stride, padding=1),
+            nn.Conv2d(in_dim, h_dim // 4, kernel_size=kernel, stride=stride, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(h_dim // 4, h_dim // 2, kernel_size=kernel, stride=stride, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(h_dim // 2, h_dim // 2, kernel_size=kernel, stride=stride, padding=1),
             nn.ReLU(),
             nn.Conv2d(h_dim // 2, h_dim, kernel_size=kernel, stride=stride, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(h_dim, h_dim, kernel_size=kernel, stride=stride, padding=1),
             nn.ReLU(),
             nn.Conv2d(h_dim, h_dim, kernel_size=kernel-1, stride=stride-1, padding=1),
             ResidualStack(h_dim, h_dim, res_h_dim, n_res_layers)
@@ -127,13 +136,19 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
         kernel = 4
         stride = 2
-
+        # Mirror of the new encoder: upsample 7 -> 14 -> 28 -> 56 -> 112 -> 224
         self.inverse_conv_stack = nn.Sequential(
             nn.ConvTranspose2d(in_dim, h_dim, kernel_size=kernel-1, stride=stride-1, padding=1),
             ResidualStack(h_dim, h_dim, res_h_dim, n_res_layers),
+            nn.ConvTranspose2d(h_dim, h_dim, kernel_size=kernel, stride=stride, padding=1),
+            nn.ReLU(),
             nn.ConvTranspose2d(h_dim, h_dim // 2, kernel_size=kernel, stride=stride, padding=1),
             nn.ReLU(),
-            nn.ConvTranspose2d(h_dim//2, 3, kernel_size=kernel, stride=stride, padding=1)
+            nn.ConvTranspose2d(h_dim // 2, h_dim // 2, kernel_size=kernel, stride=stride, padding=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(h_dim // 2, h_dim // 4, kernel_size=kernel, stride=stride, padding=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(h_dim // 4, 3, kernel_size=kernel, stride=stride, padding=1)
         )
 
     def forward(self, x):
@@ -165,6 +180,7 @@ parser.add_argument("--filename", type=str, default=timestamp)
 
 args = parser.parse_args()
 
+# FIX 2: single device definition
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 if args.save:
@@ -215,6 +231,7 @@ def validate():
 
 
 def train():
+    # FIX 1: proper iterator that cycles through the full dataset
     loader_iter = iter(training_loader)
 
     for i in range(args.n_updates):
@@ -244,6 +261,7 @@ def train():
                 hyperparameters = args.__dict__
                 utils.save_model_and_results(model, results, hyperparameters, args.filename)
 
+            # FIX 3: added validation pass every log_interval steps
             val_recon, val_loss = validate()
 
             print('Update #', i,
