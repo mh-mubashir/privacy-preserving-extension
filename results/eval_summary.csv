@@ -1,0 +1,13 @@
+encoder,exp_name,n_test,utility_acc,privacy_acc,utility_auc,privacy_auc,utility_f1,nag
+vanilla_vae,member1_vanillavae_10e_20k,2000,86.1,88.4,0.9364,0.937,0.868,0.9401
+beta_vae,member1_betavae_10e_20k,2000,81.95,85.1,0.9004,0.9125,0.8287,0.9103
+beta_vae,member1_betavae_10e_20k,2000,81.45,85.5,0.9006,0.9106,0.8229,0.8859
+vanilla_vae,member1_vanillavae_lambda3,2000,85.75,88.15,0.9345,0.9412,0.8654,0.9371
+beta_vae,member1_betavae_lambda3,2000,81.75,85.95,0.9007,0.9052,0.8253,0.8832
+residual_vae,member1_residualvae_10e_20k,2000,86.6,86.15,0.9377,0.9238,0.8724,1.0124
+vanilla_vae,member1_vanillavae_lambda3,2000,86.1,88.4,0.9369,0.9399,0.8681,0.9401
+beta_vae,member1_betavae_lambda3,2000,82.1,85.3,0.9061,0.9081,0.8305,0.9093
+residual_vae,member1_residualvae_10e_20k,2000,85.9,86.35,0.9318,0.9242,0.8669,0.9876
+cvae,member2_cvae_3e_6k,2000,55.95,60.55,0.7136,0.529,0.4518,0.564
+factor_vae,member2_factorvae_3e_6k,2000,46.05,64.25,0.5951,0.7515,0.0019,0.0
+vq_vae,member3_vqvae_10e_20k,2000,46.05,76.15,0.5117,0.509,0.0,0.0

@@ -1,0 +1,37 @@
+{
+  "encoder": "factor_vae",
+  "exp_name": "member2_factorvae_3e_6k",
+  "n_test": 2000,
+  "utility_acc": 46.05,
+  "privacy_acc": 64.25,
+  "utility_auc": 0.5951,
+  "privacy_auc": 0.7515,
+  "utility_f1": 0.0019,
+  "nag": 0.0,
+  "cm_utility": [
+    [
+      920,
+      1
+    ],
+    [
+      1078,
+      1
+    ]
+  ],
+  "cm_privacy": [
+    [
+      921,
+      602
+    ],
+    [
+      113,
+      364
+    ]
+  ],
+  "privacy_at_k_utility": {
+    "70": null,
+    "75": null,
+    "80": null,
+    "85": null
+  }
+}

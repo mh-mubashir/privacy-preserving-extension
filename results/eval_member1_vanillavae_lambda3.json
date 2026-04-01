@@ -1,0 +1,31 @@
+{
+  "encoder": "vanilla_vae",
+  "exp_name": "member1_vanillavae_lambda3",
+  "n_test": 2000,
+  "utility_acc": 86.1,
+  "privacy_acc": 88.4,
+  "utility_auc": 0.9369,
+  "privacy_auc": 0.9399,
+  "utility_f1": 0.8681,
+  "nag": 0.9401,
+  "cm_utility": [
+    [
+      807,
+      114
+    ],
+    [
+      164,
+      915
+    ]
+  ],
+  "cm_privacy": [
+    [
+      1426,
+      97
+    ],
+    [
+      135,
+      342
+    ]
+  ]
+}

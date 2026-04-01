@@ -1,0 +1,37 @@
+{
+  "encoder": "vq_vae",
+  "exp_name": "member3_vqvae_10e_20k",
+  "n_test": 2000,
+  "utility_acc": 46.05,
+  "privacy_acc": 76.15,
+  "utility_auc": 0.5117,
+  "privacy_auc": 0.509,
+  "utility_f1": 0.0,
+  "nag": 0.0,
+  "cm_utility": [
+    [
+      921,
+      0
+    ],
+    [
+      1079,
+      0
+    ]
+  ],
+  "cm_privacy": [
+    [
+      1523,
+      0
+    ],
+    [
+      477,
+      0
+    ]
+  ],
+  "privacy_at_k_utility": {
+    "70": null,
+    "75": null,
+    "80": null,
+    "85": null
+  }
+}
