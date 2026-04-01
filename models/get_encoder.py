@@ -1,62 +1,118 @@
 """
 Encoder factory for ARL (Adversarial Representation Learning).
 
-Provides a unified interface to instantiate encoder architectures as drop-in
-replacements in the privacy-preserving vision pipeline. All encoders produce
-(B, 3, 224, 224) output in [0, 1] for downstream ResNet classifiers.
+All encoders produce (B, 3, 224, 224) output in [0, 1] for downstream
+ResNet classifiers. VAE-family encoders also support return_aux=True
+to return (recon, mu, logvar, z).
 
 Encoders:
-- unet: Baseline UNet (deterministic)
-- cvae: Conditional VAE (conditions on utility attribute)
-- factor_vae: Factor VAE (disentanglement via total correlation)
+- unet:                  Baseline UNet (deterministic)
+- vanilla_vae:           Standard VAE — Kingma & Welling 2013, beta=1 ELBO        [Member 1]
+- beta_vae:              Beta-VAE — Higgins et al. 2017, beta>1 disentanglement    [Member 1]
+- residual_vae:          VAE with residual encoder blocks                           [Member 1]
+- cvae:                  Conditional VAE — conditions on utility label              [Member 2]
+- factor_vae:            Factor VAE — total correlation penalty via discriminator   [Member 2]
+- beta_tc_vae:           Beta-TC VAE — explicit total correlation penalty           [Member 2]
+- disentangled_beta_vae: Beta-VAE with skip connections and privacy bottleneck      [Member 2]
+- vq_vae:                VQ-VAE — discrete codebook latent space                   [Member 3]
 """
 
 import torch.nn as nn
 
 from .unet import UNet
+from .vanilla_vae import VanillaVAE
+from .beta_vae import BetaVAE
+from .residual_vae import ResidualVAE
 from .cvae import CVAE
 from .factor_vae import FactorVAE
+from .beta_tc_vae import BetaTCVAE
+from .disentangled_beta_vae import DisentangledBetaVAE
+from .vqvae_wrapper import VQVAEWrapper
 
 
 def get_encoder(encoder_name, img_size=224, **kwargs):
     """
-    Create an encoder model for the ARL pipeline.
+    Return an encoder model for the ARL pipeline.
 
     Args:
-        encoder_name: One of 'unet', 'cvae', 'factor_vae'
-        img_size: Spatial size (default 224)
-        **kwargs: Additional arguments for the encoder (e.g., unet_size, latent_dim)
+        encoder_name : one of unet / vanilla_vae / beta_vae / residual_vae /
+                       cvae / factor_vae / beta_tc_vae / disentangled_beta_vae / vq_vae
+        img_size     : spatial resolution (default 224)
+        **kwargs     : latent_dim, beta, unet_size, etc.
 
     Returns:
-        nn.Module: Encoder that takes (B, 3, H, W) and returns (B, 3, H, W) in [0, 1].
-                  CVAE and Factor VAE have additional forward signatures for loss computation.
+        nn.Module with forward(x) -> (B,3,H,W) in [0,1]
     """
-    encoder_name = encoder_name.lower()
+    name = encoder_name.lower()
 
-    if encoder_name == "unet":
-        size = kwargs.get("unet_size", "tiny")
-        return UNet(3, 3, size=size)
+    if name == "unet":
+        return UNet(3, 3, size=kwargs.get("unet_size", "tiny"))
 
-    elif encoder_name == "cvae":
-        latent_dim = kwargs.get("latent_dim", 256)
-        return CVAE(
-            in_channels=3,
-            out_channels=3,
-            latent_dim=latent_dim,
+    elif name == "vanilla_vae":
+        return VanillaVAE(
+            in_channels=3, out_channels=3,
+            latent_dim=kwargs.get("latent_dim", 256),
             img_size=img_size,
         )
 
-    elif encoder_name == "factor_vae":
-        latent_dim = kwargs.get("latent_dim", 256)
+    elif name == "beta_vae":
+        return BetaVAE(
+            in_channels=3, out_channels=3,
+            latent_dim=kwargs.get("latent_dim", 256),
+            img_size=img_size,
+            beta=kwargs.get("beta", 4.0),
+        )
+
+    elif name == "residual_vae":
+        return ResidualVAE(
+            in_channels=3, out_channels=3,
+            latent_dim=kwargs.get("latent_dim", 256),
+            img_size=img_size,
+        )
+
+    elif name == "cvae":
+        return CVAE(
+            in_channels=3, out_channels=3,
+            latent_dim=kwargs.get("latent_dim", 256),
+            img_size=img_size,
+        )
+
+    elif name == "factor_vae":
         return FactorVAE(
-            in_channels=3,
-            out_channels=3,
-            latent_dim=latent_dim,
+            in_channels=3, out_channels=3,
+            latent_dim=kwargs.get("latent_dim", 256),
+            img_size=img_size,
+        )
+
+    elif name == "beta_tc_vae":
+        return BetaTCVAE(
+            in_channels=3, out_channels=3,
+            latent_dim=kwargs.get("latent_dim", 256),
+            img_size=img_size,
+        )
+
+    elif name == "disentangled_beta_vae":
+        return DisentangledBetaVAE(
+            in_channels=3, out_channels=3,
+            latent_dim=kwargs.get("latent_dim", 256),
+            img_size=img_size,
+        )
+
+    elif name == "vq_vae":
+        return VQVAEWrapper(
+            in_channels=3, out_channels=3,
+            h_dim=kwargs.get("h_dim", 128),
+            res_h_dim=kwargs.get("res_h_dim", 32),
+            n_res_layers=kwargs.get("n_res_layers", 2),
+            n_embeddings=kwargs.get("n_embeddings", 512),
+            embedding_dim=kwargs.get("embedding_dim", 64),
+            beta=kwargs.get("beta", 0.25),
             img_size=img_size,
         )
 
     else:
         raise ValueError(
-            f"Unknown encoder: {encoder_name}. "
-            f"Available: unet, cvae, factor_vae"
+            f"Unknown encoder '{encoder_name}'. "
+            f"Choose from: unet, vanilla_vae, beta_vae, residual_vae, "
+            f"cvae, factor_vae, beta_tc_vae, disentangled_beta_vae, vq_vae"
         )

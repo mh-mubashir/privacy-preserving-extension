@@ -1,5 +1,7 @@
+import os
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
@@ -82,8 +84,9 @@ if __name__ == "__main__":
     parser.add_argument('--learning_rate_enc', type=float, default=0.001)
     parser.add_argument('--learning_rate_clf', type=float, default=0.001)
     parser.add_argument('--learning_rate_adv', type=float, default=0.001)
-    parser.add_argument('--encoder', type=str, default='unet', choices=['unet', 'cvae', 'factor_vae'],
-                        help='Encoder architecture: unet, cvae, or factor_vae')
+    parser.add_argument('--encoder', type=str, default='unet',
+                        choices=['unet', 'vanilla_vae', 'beta_vae', 'residual_vae', 'cvae', 'factor_vae', 'vq_vae'],
+                        help='Encoder architecture: unet, vanilla_vae, beta_vae, residual_vae, cvae, factor_vae, vq_vae')
     parser.add_argument('--vae_weight', type=float, default=0.1, help='Weight for VAE reconstruction+KL loss in ARL')
     parser.add_argument('--vae_beta', type=float, default=1.0, help='Beta for KL weight in VAE loss')
     parser.add_argument('--vae_gamma', type=float, default=10.0, help='Gamma for Factor VAE total correlation term')
@@ -258,6 +261,12 @@ if __name__ == "__main__":
                 blurred = recon
                 z_perm = permute_dims(z)
                 disc = encoder_model.module.discriminator if hasattr(encoder_model, 'module') else encoder_model.discriminator
+            elif encoder_name in ('vanilla_vae', 'beta_vae', 'residual_vae'):
+                recon, mu, logvar, z = encoder_model(inputs, return_aux=True)
+                blurred = recon
+            elif encoder_name == 'vq_vae':
+                recon, _, _, z_q = encoder_model(inputs, return_aux=True)
+                blurred = recon
             else:
                 blurred = encoder_model(inputs)
             vis_imgs = blurred
@@ -290,14 +299,33 @@ if __name__ == "__main__":
                     recon, inputs, mu, logvar, z, z_perm, disc, beta=vae_beta, gamma=vae_gamma
                 )
                 enc_loss = arl_loss + vae_weight * vae_enc_loss
+            elif encoder_name in ('vanilla_vae', 'beta_vae', 'residual_vae'):
+                B_enc   = recon.size(0)
+                lv      = logvar.clamp(-4, 4)
+                mu_c    = mu.clamp(-10, 10)
+                recon_l = F.mse_loss(recon, inputs, reduction='sum') / B_enc
+                kl_l    = -0.5 * torch.sum(1 + lv - mu_c.pow(2) - lv.exp()) / B_enc
+                vae_l   = recon_l + vae_beta * kl_l
+                enc_loss = arl_loss + vae_weight * vae_l
+            elif encoder_name == 'vq_vae':
+                # VQ-VAE loss: MSE recon only (codebook loss handled inside forward)
+                recon_l = F.mse_loss(recon, inputs)
+                enc_loss = arl_loss + vae_weight * recon_l
             else:
                 enc_loss = arl_loss
 
             optimizer_enc.zero_grad()
             optimizer_clf.zero_grad()
             enc_loss.backward()
-            optimizer_enc.step()
-            optimizer_clf.step()
+            torch.nn.utils.clip_grad_norm_(encoder_model.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(clf_model.parameters(), max_norm=1.0)
+            if torch.isnan(enc_loss):
+                print(f"  WARNING: NaN enc_loss at step {i+1}, skipping update", flush=True)
+                optimizer_enc.zero_grad()
+                optimizer_clf.zero_grad()
+            else:
+                optimizer_enc.step()
+                optimizer_clf.step()
 
             # Train Factor VAE discriminator AFTER encoder/classifier update to avoid
             # modifying discriminator parameters between forward and backward passes
@@ -361,6 +389,25 @@ if __name__ == "__main__":
         val_acc = 100.0 * val_correct / val_n
         val_acc_adv = 100.0 * val_correct_adv / val_n
         print(f'Epoch [{epoch + 1}/{num_epochs}], Val Acc: {val_acc:.2f}, Val Acc Adv: {val_acc_adv:.2f}, Val Loss: {val_loss_sum / val_n:.4f}, Val Loss Adv: {val_loss_adv_sum / val_n:.4f}')
+
+        # Save reconstruction grid: 8 originals (top row) vs 8 reconstructions (bottom row)
+        vis_dir = os.path.join(os.path.dirname(os.path.abspath(args.exp_name + '.pt')), 'visuals')
+        try:
+            vis_dir = os.path.join(os.getcwd(), 'visuals')
+            os.makedirs(vis_dir, exist_ok=True)
+            with torch.no_grad():
+                sample_in  = inputs[:8].cpu()
+                if encoder_name == 'cvae':
+                    sample_out = encoder_model(inputs[:8], targets_u[:8]).cpu()
+                else:
+                    sample_out = encoder_model(inputs[:8]).cpu()
+            grid = torchvision.utils.make_grid(
+                torch.cat([sample_in, sample_out], dim=0), nrow=8, normalize=True, value_range=(0, 1)
+            )
+            torchvision.utils.save_image(grid, os.path.join(vis_dir, f'{args.exp_name}_epoch{epoch+1:02d}.png'))
+            print(f'  Saved reconstruction grid -> visuals/{args.exp_name}_epoch{epoch+1:02d}.png', flush=True)
+        except Exception as e:
+            print(f'  Warning: could not save visual grid: {e}', flush=True)
 
         if args.use_wandb:
             imgs = torchvision.utils.make_grid(inputs[:8].detach().cpu())
