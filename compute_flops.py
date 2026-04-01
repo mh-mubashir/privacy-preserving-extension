@@ -1,11 +1,8 @@
 """
 compute_flops.py — FLOPs, MACs, and parameter count for all encoder variants.
 
-Addresses the professor's feedback: "define deployment constraints (latency,
-model size, power targets) and tie your FLOPs/MACs analysis to those limits."
-
-Uses thop (pip install thop) to profile each encoder on a single 224x224 image.
-Prints a comparison table and rough latency estimates for three edge devices.
+Profiles each encoder on a single 224x224 image using thop and prints a
+comparison table with estimated inference latency on common edge devices.
 
 Usage:
     python compute_flops.py
@@ -33,12 +30,12 @@ EDGE_DEVICES = {
 }
 
 ENCODERS = [
-    ("vanilla_vae",           "Member 1 — Vanilla VAE"),
-    ("beta_vae",              "Member 1 — Beta-VAE (β=4)"),
-    ("residual_vae",          "Member 1 — Residual VAE"),
-    ("beta_tc_vae",           "Member 2 — Beta-TC VAE"),
-    ("disentangled_beta_vae", "Member 2 — Disentangled Beta-VAE"),
-    ("vq_vae",                "Member 3 — VQ-VAE"),
+    ("vanilla_vae",           "Vanilla VAE"),
+    ("beta_vae",              "Beta-VAE (β=4)"),
+    ("residual_vae",          "Residual VAE"),
+    ("beta_tc_vae",           "Beta-TC VAE"),
+    ("disentangled_beta_vae", "Disentangled Beta-VAE"),
+    ("vq_vae",                "VQ-VAE"),
 ]
 
 

@@ -7,14 +7,14 @@ to return (recon, mu, logvar, z).
 
 Encoders:
 - unet:                  Baseline UNet (deterministic)
-- vanilla_vae:           Standard VAE — Kingma & Welling 2013, beta=1 ELBO        [Member 1]
-- beta_vae:              Beta-VAE — Higgins et al. 2017, beta>1 disentanglement    [Member 1]
-- residual_vae:          VAE with residual encoder blocks                           [Member 1]
-- cvae:                  Conditional VAE — conditions on utility label              [Member 2]
-- factor_vae:            Factor VAE — total correlation penalty via discriminator   [Member 2]
-- beta_tc_vae:           Beta-TC VAE — explicit total correlation penalty           [Member 2]
-- disentangled_beta_vae: Beta-VAE with skip connections and privacy bottleneck      [Member 2]
-- vq_vae:                VQ-VAE — discrete codebook latent space                   [Member 3]
+- vanilla_vae:           Standard VAE — Kingma & Welling 2013, beta=1 ELBO
+- beta_vae:              Beta-VAE — Higgins et al. 2017, beta>1 disentanglement
+- residual_vae:          VAE with residual encoder blocks
+- cvae:                  Conditional VAE — conditions on utility label
+- factor_vae:            Factor VAE — total correlation penalty via discriminator
+- beta_tc_vae:           Beta-TC VAE — explicit total correlation penalty
+- disentangled_beta_vae: Beta-VAE with skip connections and privacy bottleneck
+- vq_vae:                VQ-VAE — discrete codebook latent space
 """
 
 import torch.nn as nn

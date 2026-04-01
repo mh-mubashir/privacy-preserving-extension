@@ -8,7 +8,7 @@
 #SBATCH --output=/scratch/%u/pp_ext_member2/logs/betavae_full_%j.out
 #SBATCH --error=/scratch/%u/pp_ext_member2/logs/betavae_full_%j.err
 
-# Member 1 — Full ARL training: BetaVAE encoder (beta=4.0)
+# BetaVAE full ARL training (beta=4.0)
 # 20k train samples, 10 epochs, CelebA smile (utility) vs gender (privacy)
 
 source /shared/EL9/explorer/anaconda3/2024.06/etc/profile.d/conda.sh

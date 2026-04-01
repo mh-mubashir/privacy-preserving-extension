@@ -1,5 +1,5 @@
 """
-Vanilla VAE implementation for the ARL pipeline (Member 1).
+Vanilla VAE for the ARL pipeline.
 
 Based on Kingma & Welling (2013). Encoder maps a 224x224 image down to
 a latent mean and log-variance; decoder maps back up. Reconstruction

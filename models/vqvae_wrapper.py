@@ -1,5 +1,5 @@
 """
-VQ-VAE ARL wrapper (integrates Member 3 Malia's implementation).
+VQ-VAE wrapper for the ARL pipeline.
 
 Malia's models/vqvae.py has two issues that prevent ARL use:
   1. VectorQuantizer uses a global `device` variable — crashes on import

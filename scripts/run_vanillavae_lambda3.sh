@@ -8,7 +8,7 @@
 #SBATCH --output=/scratch/%u/pp_ext_member2/logs/vanillavae_l3_%j.out
 #SBATCH --error=/scratch/%u/pp_ext_member2/logs/vanillavae_l3_%j.err
 
-# Member 1 — VanillaVAE lambda sweep (lambda_clf=3.0)
+# VanillaVAE lambda sweep (lambda_clf=3.0)
 # Stronger adversarial pressure -> lower gender accuracy
 
 source /shared/EL9/explorer/anaconda3/2024.06/etc/profile.d/conda.sh

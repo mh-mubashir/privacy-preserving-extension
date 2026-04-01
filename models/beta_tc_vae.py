@@ -1,5 +1,5 @@
 """
-Beta-TC VAE for Privacy-Preserving Edge Vision (Member 2 / Sindhu).
+Beta-TC VAE for the ARL pipeline.
 
 Extends the standard beta-VAE by decomposing the KL term and explicitly
 penalising the Total Correlation (TC) component, following Chen et al. 2018

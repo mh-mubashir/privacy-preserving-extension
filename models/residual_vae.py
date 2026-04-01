@@ -1,8 +1,5 @@
 """
-ResidualVAE for the ARL pipeline (Member 1 — architectural exploration).
-
-Addresses professor's feedback: "consider also exploring network architecture
-dimensions such as number of layers, channel depth, and skip/residual connections."
+ResidualVAE for the ARL pipeline.
 
 Same channel schedule and latent dim as VanillaVAE for a fair comparison.
 The encoder replaces each plain ConvBlock with a ResBlock — two convolutions
@@ -11,7 +8,7 @@ with a skip connection. This gives richer gradient flow and better feature reuse
 Decoder is unchanged from VanillaVAE, keeping the comparison clean:
   VanillaVAE  -> feedforward encoder, beta=1
   BetaVAE     -> feedforward encoder, beta=4
-  ResidualVAE -> residual encoder,    beta=1   <-- architectural difference only
+  ResidualVAE -> residual encoder,    beta=1
 """
 
 import torch

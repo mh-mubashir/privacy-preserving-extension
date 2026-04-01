@@ -8,7 +8,7 @@
 #SBATCH --output=/scratch/%u/pp_ext_member2/logs/betavae_l3_%j.out
 #SBATCH --error=/scratch/%u/pp_ext_member2/logs/betavae_l3_%j.err
 
-# Member 1 — BetaVAE lambda sweep (beta=4, lambda_clf=3.0)
+# BetaVAE lambda sweep (beta=4, lambda_clf=3.0)
 # Combines stronger disentanglement (beta=4) + stronger adversarial pressure
 
 source /shared/EL9/explorer/anaconda3/2024.06/etc/profile.d/conda.sh

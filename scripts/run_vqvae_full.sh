@@ -8,8 +8,8 @@
 #SBATCH --output=/scratch/%u/pp_ext_member2/logs/vqvae_%j.out
 #SBATCH --error=/scratch/%u/pp_ext_member2/logs/vqvae_%j.err
 
-# Member 3 — VQ-VAE full ARL training via VQVAEWrapper
-# Uses discrete codebook quantisation; loss is MSE reconstruction only (no KL)
+# VQ-VAE full ARL training
+# Uses discrete codebook quantisation; reconstruction loss is MSE only (no KL term)
 
 source /shared/EL9/explorer/anaconda3/2024.06/etc/profile.d/conda.sh
 conda activate pp_ext_member2_v2

@@ -8,7 +8,7 @@
 #SBATCH --output=/scratch/%u/pp_ext_member2/logs/vanillavae_full_%j.out
 #SBATCH --error=/scratch/%u/pp_ext_member2/logs/vanillavae_full_%j.err
 
-# Member 1 — Full ARL training: VanillaVAE encoder
+# VanillaVAE full ARL training
 # 20k train samples, 10 epochs, CelebA smile (utility) vs gender (privacy)
 
 source /shared/EL9/explorer/anaconda3/2024.06/etc/profile.d/conda.sh

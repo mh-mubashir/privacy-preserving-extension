@@ -1,5 +1,5 @@
 """
-Beta-VAE for the ARL pipeline (Member 1).
+Beta-VAE for the ARL pipeline.
 
 Same architecture as VanillaVAE, but with a stronger KL penalty (beta > 1).
 Based on Higgins et al. 2017 — the idea is that a higher beta pushes the

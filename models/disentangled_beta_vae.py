@@ -1,5 +1,5 @@
 """
-Disentangled Beta-VAE for Privacy-Preserving Edge Vision (Member 2 / Sindhu).
+Disentangled Beta-VAE for the ARL pipeline.
 
 Implements the "understanding disentangling" variant of beta-VAE proposed by
 Burgess et al. 2018 ("Understanding disentangling in beta-VAE"), which uses a

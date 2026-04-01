@@ -8,8 +8,7 @@
 #SBATCH --output=/scratch/%u/pp_ext_member2/logs/residualvae_%j.out
 #SBATCH --error=/scratch/%u/pp_ext_member2/logs/residualvae_%j.err
 
-# Member 1 — ResidualVAE full ARL training
-# Directly addresses professor's feedback: residual/skip connection architecture
+# ResidualVAE full ARL training
 
 source /shared/EL9/explorer/anaconda3/2024.06/etc/profile.d/conda.sh
 conda activate pp_ext_member2_v2
