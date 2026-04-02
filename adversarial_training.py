@@ -79,6 +79,8 @@ def setup_seed(seed):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument('--img_size', type=int, default=224,
+                    help='Input image size (use 64 for VQ-VAE to reduce memory)')
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--num_epochs', type=int, default=50)
     parser.add_argument('--learning_rate_enc', type=float, default=0.001)
@@ -122,7 +124,7 @@ if __name__ == "__main__":
     device = torch.device(args.device)
     data_dir = args.data_dir
     lambda_clf = args.lambda_clf
-    img_size = 224
+    img_size = args.img_size
     unet_size = 'tiny'
     encoder_name = args.encoder
     vae_weight = args.vae_weight
@@ -308,9 +310,9 @@ if __name__ == "__main__":
                 vae_l   = recon_l + vae_beta * kl_l
                 enc_loss = arl_loss + vae_weight * vae_l
             elif encoder_name == 'vq_vae':
-                # VQ-VAE loss: MSE recon only (codebook loss handled inside forward)
                 recon_l = F.mse_loss(recon, inputs)
-                enc_loss = arl_loss + vae_weight * recon_l
+                codebook_l = encoder_model.last_codebook_loss or 0.0
+                enc_loss = arl_loss + vae_weight * (recon_l + codebook_l)
             else:
                 enc_loss = arl_loss
 
