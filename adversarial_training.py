@@ -85,8 +85,9 @@ if __name__ == "__main__":
     parser.add_argument('--learning_rate_clf', type=float, default=0.001)
     parser.add_argument('--learning_rate_adv', type=float, default=0.001)
     parser.add_argument('--encoder', type=str, default='unet',
-                        choices=['unet', 'vanilla_vae', 'beta_vae', 'residual_vae', 'cvae', 'factor_vae', 'vq_vae'],
-                        help='Encoder architecture: unet, vanilla_vae, beta_vae, residual_vae, cvae, factor_vae, vq_vae')
+                        choices=['unet', 'vanilla_vae', 'beta_vae', 'residual_vae',
+                                 'cvae', 'factor_vae', 'beta_tc_vae', 'disentangled_beta_vae', 'vq_vae'],
+                        help='Encoder architecture')
     parser.add_argument('--vae_weight', type=float, default=0.1, help='Weight for VAE reconstruction+KL loss in ARL')
     parser.add_argument('--vae_beta', type=float, default=1.0, help='Beta for KL weight in VAE loss')
     parser.add_argument('--vae_gamma', type=float, default=10.0, help='Gamma for Factor VAE total correlation term')
@@ -103,6 +104,10 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--use_wandb', action='store_true')
     parser.add_argument('--lambda_clf', type=float, default=1.0, help='Weight for utility loss (encoder minimizes loss_clf - lambda*loss_adv)')
+    parser.add_argument('--warmup_epochs', type=int, default=0,
+                        help='Epochs to train encoder+classifier only before introducing the adversary. '
+                             'Recommended: 3-5. During warmup the adversary is not updated and does not '
+                             'affect the encoder, so utility is learned first.')
     parser.add_argument('--exp_name', type=str, default='celeb')
     parser.add_argument('--max_train_samples', type=int, default=60000,
                         help='Max number of training samples (for quick sanity runs use e.g. 2048)')
@@ -235,14 +240,22 @@ if __name__ == "__main__":
             'u_task': u_task,
         })
 
+    warmup_epochs = args.warmup_epochs
+    if warmup_epochs > 0:
+        print(f"Two-phase training: {warmup_epochs} warmup epoch(s) (utility only) "
+              f"then {num_epochs} ARL epoch(s) (utility + privacy adversary)", flush=True)
+
     num_batches = len(train_loader)
     for epoch in range(num_epochs):
+        in_warmup = epoch < warmup_epochs
+        phase_label = f"[WARMUP {epoch+1}/{warmup_epochs}]" if in_warmup else f"[Epoch {epoch+1-warmup_epochs}/{num_epochs-warmup_epochs}]"
+
         encoder_model.train()
         adv_model.train()
         clf_model.train()
         running_loss_clf = 0.0
         running_loss_adv = 0.0
-        print(f"[Epoch {epoch + 1}/{num_epochs}] Starting training ({num_batches} batches)...", flush=True)
+        print(f"{phase_label} Starting training ({num_batches} batches)...", flush=True)
 
         for i, (inputs, targets) in enumerate(train_loader):
             if i == 0:
@@ -280,17 +293,22 @@ if __name__ == "__main__":
                 adv_logits_enc = adv_model(blurred).flatten()
                 loss_adv_enc = criterion(adv_logits_enc, targets_adv)
 
-            # Adversary update: separate forward on detached features, single backward
-            blurred_detached = blurred.detach()
-            p_logits_adv = adv_model(blurred_detached).flatten()
-            loss_adv = criterion(p_logits_adv, targets_adv)
-            optimizer_adv.zero_grad()
-            loss_adv.backward()
-            optimizer_adv.step()
+            # Adversary update — skipped during warmup so utility is learned first
+            if not in_warmup:
+                blurred_detached = blurred.detach()
+                p_logits_adv = adv_model(blurred_detached).flatten()
+                loss_adv = criterion(p_logits_adv, targets_adv)
+                optimizer_adv.zero_grad()
+                loss_adv.backward()
+                optimizer_adv.step()
 
-            # Encoder + utility classifier: ARL objective + VAE terms (for CVAE/Factor VAE)
-            # Use the no-grad adversary signal so encoder/classifier optimize against a fixed adv.
-            arl_loss = loss_clf - lambda_clf * loss_adv_enc
+            # Encoder + utility classifier objective
+            # During warmup: pure utility loss only (no adversary pressure)
+            # During ARL:    utility loss - lambda * adversary loss
+            if in_warmup:
+                arl_loss = loss_clf
+            else:
+                arl_loss = loss_clf - lambda_clf * loss_adv_enc
             if encoder_name == 'cvae':
                 vae_l, _, _ = cvae_loss(recon, inputs, mu, logvar, beta=vae_beta)
                 enc_loss = arl_loss + vae_weight * vae_l
