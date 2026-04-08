@@ -294,6 +294,7 @@ if __name__ == "__main__":
                 loss_adv_enc = criterion(adv_logits_enc, targets_adv)
 
             # Adversary update — skipped during warmup so utility is learned first
+            loss_adv = torch.tensor(0.0, device=device)
             if not in_warmup:
                 blurred_detached = blurred.detach()
                 p_logits_adv = adv_model(blurred_detached).flatten()
