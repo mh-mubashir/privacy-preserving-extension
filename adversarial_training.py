@@ -218,7 +218,7 @@ if __name__ == "__main__":
     # Otherwise: ResNet18 on reconstructed image
     use_latent_adv = args.latent_adv
     if use_latent_adv:
-        latent_dim = 128
+        latent_dim = 256
         adv_model = nn.Sequential(
             nn.Linear(latent_dim, 256), nn.ReLU(),
             nn.Linear(256, 128),        nn.ReLU(),
