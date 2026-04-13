@@ -108,6 +108,13 @@ if __name__ == "__main__":
                         help='Epochs to train encoder+classifier only before introducing the adversary. '
                              'Recommended: 3-5. During warmup the adversary is not updated and does not '
                              'affect the encoder, so utility is learned first.')
+    parser.add_argument('--latent_adv', action='store_true',
+                        help='Run adversary on latent z instead of reconstructed image. '
+                             'More direct privacy enforcement at the representation level.')
+    parser.add_argument('--adv_steps', type=int, default=1,
+                        help='Adversary update steps per encoder step (default 1). '
+                             'Higher values (e.g. 5) give adversary more time to strengthen, '
+                             'increasing pressure on the encoder to suppress private attributes.')
     parser.add_argument('--exp_name', type=str, default='celeb')
     parser.add_argument('--max_train_samples', type=int, default=60000,
                         help='Max number of training samples (for quick sanity runs use e.g. 2048)')
@@ -207,8 +214,19 @@ if __name__ == "__main__":
     clf_model = clf_model.to(device)
 
     # Adversary (predicts private attribute)
-    adv_model = ResNet18()
-    adv_model.linear = nn.Linear(512, 1)
+    # If --latent_adv: lightweight MLP on latent z (128-dim)
+    # Otherwise: ResNet18 on reconstructed image
+    use_latent_adv = args.latent_adv
+    if use_latent_adv:
+        latent_dim = 128
+        adv_model = nn.Sequential(
+            nn.Linear(latent_dim, 256), nn.ReLU(),
+            nn.Linear(256, 128),        nn.ReLU(),
+            nn.Linear(128, 1)
+        )
+    else:
+        adv_model = ResNet18()
+        adv_model.linear = nn.Linear(512, 1)
     if torch.cuda.device_count() > 1:
         adv_model = nn.DataParallel(adv_model)
     adv_model = adv_model.to(device)
@@ -241,6 +259,7 @@ if __name__ == "__main__":
         })
 
     warmup_epochs = args.warmup_epochs
+    adv_steps     = args.adv_steps
     if warmup_epochs > 0:
         print(f"Two-phase training: {warmup_epochs} warmup epoch(s) (utility only) "
               f"then {num_epochs} ARL epoch(s) (utility + privacy adversary)", flush=True)
@@ -288,20 +307,26 @@ if __name__ == "__main__":
             u_logits = clf_model(blurred).flatten()
             loss_clf = criterion(u_logits, targets_u)
 
-            # Adversary signal for encoder: use a no-grad forward so ARL sees a fixed adversary
+            # Choose adversary input: latent z or reconstructed image
+            z_for_adv = mu if (use_latent_adv and encoder_name in
+                               ('vanilla_vae','beta_vae','residual_vae',
+                                'beta_tc_vae','disentangled_beta_vae')) else blurred
+
+            # Adversary signal for encoder: no-grad forward on fixed adversary
             with torch.no_grad():
-                adv_logits_enc = adv_model(blurred).flatten()
+                adv_logits_enc = adv_model(z_for_adv).flatten()
                 loss_adv_enc = criterion(adv_logits_enc, targets_adv)
 
-            # Adversary update — skipped during warmup so utility is learned first
+            # Adversary update — skipped during warmup, multiple steps if --adv_steps > 1
             loss_adv = torch.tensor(0.0, device=device)
             if not in_warmup:
-                blurred_detached = blurred.detach()
-                p_logits_adv = adv_model(blurred_detached).flatten()
-                loss_adv = criterion(p_logits_adv, targets_adv)
-                optimizer_adv.zero_grad()
-                loss_adv.backward()
-                optimizer_adv.step()
+                for _ in range(adv_steps):
+                    adv_input = z_for_adv.detach()
+                    p_logits_adv = adv_model(adv_input).flatten()
+                    loss_adv = criterion(p_logits_adv, targets_adv)
+                    optimizer_adv.zero_grad()
+                    loss_adv.backward()
+                    optimizer_adv.step()
 
             # Encoder + utility classifier objective
             # During warmup: pure utility loss only (no adversary pressure)
@@ -389,10 +414,18 @@ if __name__ == "__main__":
 
                 if encoder_name == 'cvae':
                     blurred = encoder_model(inputs, targets_u)
+                    z_val = blurred
+                elif encoder_name in ('vanilla_vae','beta_vae','residual_vae',
+                                      'beta_tc_vae','disentangled_beta_vae'):
+                    recon_v, mu_v, _, _ = encoder_model(inputs, return_aux=True)
+                    blurred = recon_v
+                    z_val = mu_v
                 else:
                     blurred = encoder_model(inputs)
+                    z_val = blurred
                 logits_u = clf_model(blurred).flatten()
-                adv_logits = adv_model(blurred).flatten()
+                adv_in   = z_val if use_latent_adv else blurred
+                adv_logits = adv_model(adv_in).flatten()
 
                 loss_clf = criterion(logits_u, targets_u)
                 loss_adv = criterion(adv_logits, targets_adv)
@@ -455,10 +488,18 @@ if __name__ == "__main__":
 
             if encoder_name == 'cvae':
                 blurred = encoder_model(inputs, targets_u)
+                z_test = blurred
+            elif encoder_name in ('vanilla_vae','beta_vae','residual_vae',
+                                  'beta_tc_vae','disentangled_beta_vae'):
+                recon_t, mu_t, _, _ = encoder_model(inputs, return_aux=True)
+                blurred = recon_t
+                z_test = mu_t
             else:
                 blurred = encoder_model(inputs)
+                z_test = blurred
             logits_u = clf_model(blurred).flatten()
-            adv_logits = adv_model(blurred).flatten()
+            adv_in_t = z_test if use_latent_adv else blurred
+            adv_logits = adv_model(adv_in_t).flatten()
 
             pred_u = (torch.sigmoid(logits_u) > 0.5).float()
             pred_adv = (torch.sigmoid(adv_logits) > 0.5).float()
