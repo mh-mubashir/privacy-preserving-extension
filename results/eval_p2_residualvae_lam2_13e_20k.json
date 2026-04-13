@@ -1,0 +1,53 @@
+{
+  "encoder": "residual_vae",
+  "exp_name": "p2_residualvae_lam2_13e_20k",
+  "n_test": 2000,
+  "utility_acc": 86.85,
+  "privacy_acc": 87.6,
+  "utility_auc": 0.9437,
+  "privacy_auc": 0.9415,
+  "utility_f1": 0.8768,
+  "nag": 0.9801,
+  "cm_utility": [
+    [
+      801,
+      120
+    ],
+    [
+      143,
+      936
+    ]
+  ],
+  "cm_privacy": [
+    [
+      1435,
+      88
+    ],
+    [
+      160,
+      317
+    ]
+  ],
+  "privacy_at_k_utility": {
+    "70": {
+      "threshold": 0.049,
+      "utility_acc": 70.4,
+      "privacy_acc": 74.65
+    },
+    "75": {
+      "threshold": 0.97,
+      "utility_acc": 75.05,
+      "privacy_acc": 78.0
+    },
+    "80": {
+      "threshold": 0.936,
+      "utility_acc": 80.0,
+      "privacy_acc": 80.15
+    },
+    "85": {
+      "threshold": 0.803,
+      "utility_acc": 85.2,
+      "privacy_acc": 85.25
+    }
+  }
+}

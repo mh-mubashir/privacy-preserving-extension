@@ -1,0 +1,49 @@
+{
+  "encoder": "beta_vae",
+  "exp_name": "p2_betavae_13e_20k",
+  "n_test": 2000,
+  "utility_acc": 83.55,
+  "privacy_acc": 85.75,
+  "utility_auc": 0.911,
+  "privacy_auc": 0.9133,
+  "utility_f1": 0.8439,
+  "nag": 0.9385,
+  "cm_utility": [
+    [
+      782,
+      139
+    ],
+    [
+      190,
+      889
+    ]
+  ],
+  "cm_privacy": [
+    [
+      1398,
+      125
+    ],
+    [
+      160,
+      317
+    ]
+  ],
+  "privacy_at_k_utility": {
+    "70": {
+      "threshold": 0.113,
+      "utility_acc": 70.1,
+      "privacy_acc": 74.35
+    },
+    "75": {
+      "threshold": 0.163,
+      "utility_acc": 75.45,
+      "privacy_acc": 77.6
+    },
+    "80": {
+      "threshold": 0.261,
+      "utility_acc": 80.05,
+      "privacy_acc": 81.4
+    },
+    "85": null
+  }
+}
