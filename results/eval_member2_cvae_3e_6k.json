@@ -1,0 +1,41 @@
+{
+  "encoder": "cvae",
+  "exp_name": "member2_cvae_3e_6k",
+  "n_test": 2000,
+  "utility_acc": 55.95,
+  "privacy_acc": 60.55,
+  "utility_auc": 0.7136,
+  "privacy_auc": 0.529,
+  "utility_f1": 0.4518,
+  "nag": 0.564,
+  "cm_utility": [
+    [
+      756,
+      165
+    ],
+    [
+      716,
+      363
+    ]
+  ],
+  "cm_privacy": [
+    [
+      1039,
+      484
+    ],
+    [
+      305,
+      172
+    ]
+  ],
+  "privacy_at_k_utility": {
+    "70": {
+      "threshold": 0.345,
+      "utility_acc": 70.05,
+      "privacy_acc": 25.5
+    },
+    "75": null,
+    "80": null,
+    "85": null
+  }
+}

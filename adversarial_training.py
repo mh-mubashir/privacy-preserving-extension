@@ -1,5 +1,7 @@
+import os
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
@@ -36,8 +38,10 @@ if __name__ == "__main__":
     parser.add_argument('--learning_rate_enc', type=float, default=0.001)
     parser.add_argument('--learning_rate_clf', type=float, default=0.001)
     parser.add_argument('--learning_rate_adv', type=float, default=0.001)
-    parser.add_argument('--encoder', type=str, default='unet', choices=['unet', 'cvae', 'factor_vae'],
-                        help='Encoder architecture: unet, cvae, or factor_vae')
+    parser.add_argument('--encoder', type=str, default='unet',
+                        choices=['unet', 'vanilla_vae', 'beta_vae', 'residual_vae',
+                                 'cvae', 'factor_vae', 'beta_tc_vae', 'disentangled_beta_vae', 'vq_vae'],
+                        help='Encoder architecture')
     parser.add_argument('--vae_weight', type=float, default=0.1, help='Weight for VAE reconstruction+KL loss in ARL')
     parser.add_argument('--vae_beta', type=float, default=1.0, help='Beta for KL weight in VAE loss')
     parser.add_argument('--vae_gamma', type=float, default=10.0, help='Gamma for Factor VAE total correlation term')
@@ -54,6 +58,10 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--use_wandb', action='store_true')
     parser.add_argument('--lambda_clf', type=float, default=1.0, help='Weight for utility loss (encoder minimizes loss_clf - lambda*loss_adv)')
+    parser.add_argument('--warmup_epochs', type=int, default=0,
+                        help='Epochs to train encoder+classifier only before introducing the adversary. '
+                             'Recommended: 3-5. During warmup the adversary is not updated and does not '
+                             'affect the encoder, so utility is learned first.')
     parser.add_argument('--exp_name', type=str, default='celeb')
     args = parser.parse_args()
 
@@ -204,12 +212,22 @@ if __name__ == "__main__":
             'u_task': u_task,
         })
 
+    warmup_epochs = args.warmup_epochs
+    if warmup_epochs > 0:
+        print(f"Two-phase training: {warmup_epochs} warmup epoch(s) (utility only) "
+              f"then {num_epochs} ARL epoch(s) (utility + privacy adversary)", flush=True)
+
+    num_batches = len(train_loader)
     for epoch in range(num_epochs):
+        in_warmup = epoch < warmup_epochs
+        phase_label = f"[WARMUP {epoch+1}/{warmup_epochs}]" if in_warmup else f"[Epoch {epoch+1-warmup_epochs}/{num_epochs-warmup_epochs}]"
+
         encoder_model.train()
         adv_model.train()
         clf_model.train()
         running_loss_clf = 0.0
         running_loss_adv = 0.0
+        print(f"{phase_label} Starting training ({num_batches} batches)...", flush=True)
 
         for i, (inputs, targets) in enumerate(train_loader):
             inputs = inputs.to(device)
@@ -226,6 +244,12 @@ if __name__ == "__main__":
                 blurred = recon
                 z_perm = permute_dims(z)
                 disc = encoder_model.module.discriminator if hasattr(encoder_model, 'module') else encoder_model.discriminator
+            elif encoder_name in ('vanilla_vae', 'beta_vae', 'residual_vae'):
+                recon, mu, logvar, z = encoder_model(inputs, return_aux=True)
+                blurred = recon
+            elif encoder_name == 'vq_vae':
+                recon, _, _, z_q = encoder_model(inputs, return_aux=True)
+                blurred = recon
             else:
                 blurred = encoder_model(inputs)
             vis_imgs = blurred
@@ -236,13 +260,28 @@ if __name__ == "__main__":
             loss_clf = criterion(u_logits, targets_u)
             loss_adv = criterion(p_logits, targets_adv)
 
-            # Update adversary: minimize loss_adv
-            optimizer_adv.zero_grad()
-            loss_adv.backward(retain_graph=True)
-            optimizer_adv.step()
+            # Adversary signal for encoder: use a no-grad forward so ARL sees a fixed adversary
+            with torch.no_grad():
+                adv_logits_enc = adv_model(blurred).flatten()
+                loss_adv_enc = criterion(adv_logits_enc, targets_adv)
 
-            # Encoder + utility classifier: ARL objective + VAE terms (for CVAE/Factor VAE)
-            arl_loss = loss_clf - lambda_clf * loss_adv
+            # Adversary update — skipped during warmup so utility is learned first
+            loss_adv = torch.tensor(0.0, device=device)
+            if not in_warmup:
+                blurred_detached = blurred.detach()
+                p_logits_adv = adv_model(blurred_detached).flatten()
+                loss_adv = criterion(p_logits_adv, targets_adv)
+                optimizer_adv.zero_grad()
+                loss_adv.backward()
+                optimizer_adv.step()
+
+            # Encoder + utility classifier objective
+            # During warmup: pure utility loss only (no adversary pressure)
+            # During ARL:    utility loss - lambda * adversary loss
+            if in_warmup:
+                arl_loss = loss_clf
+            else:
+                arl_loss = loss_clf - lambda_clf * loss_adv_enc
             if encoder_name == 'cvae':
                 vae_l, _, _ = cvae_loss(recon, inputs, mu, logvar, beta=vae_beta)
                 enc_loss = arl_loss + vae_weight * vae_l
@@ -251,20 +290,33 @@ if __name__ == "__main__":
                     recon, inputs, mu, logvar, z, z_perm, disc, beta=vae_beta, gamma=vae_gamma
                 )
                 enc_loss = arl_loss + vae_weight * vae_enc_loss
-                # Train discriminator
-                optimizer_disc = optimizers['disc']
-                optimizer_disc.zero_grad()
-                loss_disc = discriminator_loss(z.detach(), z_perm.detach(), disc)
-                loss_disc.backward()
-                optimizer_disc.step()
+            elif encoder_name in ('vanilla_vae', 'beta_vae', 'residual_vae'):
+                B_enc   = recon.size(0)
+                lv      = logvar.clamp(-4, 4)
+                mu_c    = mu.clamp(-10, 10)
+                recon_l = F.mse_loss(recon, inputs, reduction='sum') / B_enc
+                kl_l    = -0.5 * torch.sum(1 + lv - mu_c.pow(2) - lv.exp()) / B_enc
+                vae_l   = recon_l + vae_beta * kl_l
+                enc_loss = arl_loss + vae_weight * vae_l
+            elif encoder_name == 'vq_vae':
+                # VQ-VAE loss: MSE recon only (codebook loss handled inside forward)
+                recon_l = F.mse_loss(recon, inputs)
+                enc_loss = arl_loss + vae_weight * recon_l
             else:
                 enc_loss = arl_loss
 
             optimizer_enc.zero_grad()
             optimizer_clf.zero_grad()
             enc_loss.backward()
-            optimizer_enc.step()
-            optimizer_clf.step()
+            torch.nn.utils.clip_grad_norm_(encoder_model.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(clf_model.parameters(), max_norm=1.0)
+            if torch.isnan(enc_loss):
+                print(f"  WARNING: NaN enc_loss at step {i+1}, skipping update", flush=True)
+                optimizer_enc.zero_grad()
+                optimizer_clf.zero_grad()
+            else:
+                optimizer_enc.step()
+                optimizer_clf.step()
 
             running_loss_clf += loss_clf.item()
             running_loss_adv += loss_adv.item()
@@ -314,6 +366,25 @@ if __name__ == "__main__":
         val_acc = 100.0 * val_correct / val_n
         val_acc_adv = 100.0 * val_correct_adv / val_n
         print(f'Epoch [{epoch + 1}/{num_epochs}], Val Acc: {val_acc:.2f}, Val Acc Adv: {val_acc_adv:.2f}, Val Loss: {val_loss_sum / val_n:.4f}, Val Loss Adv: {val_loss_adv_sum / val_n:.4f}')
+
+        # Save reconstruction grid: 8 originals (top row) vs 8 reconstructions (bottom row)
+        vis_dir = os.path.join(os.path.dirname(os.path.abspath(args.exp_name + '.pt')), 'visuals')
+        try:
+            vis_dir = os.path.join(os.getcwd(), 'visuals')
+            os.makedirs(vis_dir, exist_ok=True)
+            with torch.no_grad():
+                sample_in  = inputs[:8].cpu()
+                if encoder_name == 'cvae':
+                    sample_out = encoder_model(inputs[:8], targets_u[:8]).cpu()
+                else:
+                    sample_out = encoder_model(inputs[:8]).cpu()
+            grid = torchvision.utils.make_grid(
+                torch.cat([sample_in, sample_out], dim=0), nrow=8, normalize=True, value_range=(0, 1)
+            )
+            torchvision.utils.save_image(grid, os.path.join(vis_dir, f'{args.exp_name}_epoch{epoch+1:02d}.png'))
+            print(f'  Saved reconstruction grid -> visuals/{args.exp_name}_epoch{epoch+1:02d}.png', flush=True)
+        except Exception as e:
+            print(f'  Warning: could not save visual grid: {e}', flush=True)
 
         if args.use_wandb:
             imgs = torchvision.utils.make_grid(inputs[:8].detach().cpu())

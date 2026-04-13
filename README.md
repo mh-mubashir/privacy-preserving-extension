@@ -133,24 +133,59 @@ pip install pythae     # Extra VAE variants (DisentangledBetaVAE, BetaTCVAE, Fac
 
 ## Model Architecture
 
-1. **Encoder (trainable)**  
-   - **UNet** with 3 input channels and 3 output channels, `size='tiny'`.  
-   - Input: RGB image `(B, 3, 224, 224)`.  
-   - Output: same spatial size, 3 channels, values in [0, 1] (clamped).  
-   - Acts as a learned “obfuscation” that preserves utility and suppresses the private attribute.
+### Encoder variants
 
-2. **Utility classifier (trainable)**  
-   - **ResNet-18** (from `models/cifar_like/resnet.py`), final layer replaced with `nn.Linear(512, 1)`.  
-   - Input: encoder output (3-channel image).  
-   - Trained together with the encoder to minimize the **utility loss** (BCE on the utility attribute). Updated with the same objective as the encoder: minimize `loss_clf - lambda_clf * loss_adv`.
+All encoders share a common ARL interface:
+- `forward(x)` → `(B, 3, 224, 224)` reconstruction in `[0, 1]`
+- `forward(x, return_aux=True)` → `(recon, mu, logvar, z)` for VAE-family encoders
 
-3. **Adversary (trainable)**  
-   - Same ResNet-18 with `nn.Linear(512, 1)`.  
-   - Tries to predict the **private** attribute from the encoder output.  
-   - Trained to minimize BCE on the private attribute; the encoder (and classifier) are trained to maximize this loss (so the private attribute becomes hard to predict).
+| Encoder | Key | Description |
+|---|---|---|
+| UNet (baseline) | `unet` | Tiny UNet, deterministic, no latent space |
+| **Vanilla VAE** | `vanilla_vae` | Standard VAE (Kingma & Welling 2013), beta=1 ELBO |
+| **Beta-VAE** | `beta_vae` | Beta-VAE (Higgins et al. 2017), beta>1 for disentanglement |
+| CVAE | `cvae` | Conditional VAE, conditions on utility label |
+| Factor VAE | `factor_vae` | Disentanglement via total correlation discriminator |
 
-ResNet uses `F.adaptive_avg_pool2d(out, 1)` so it works for 224×224 inputs.
+#### VanillaVAE (`models/vanilla_vae.py`)
 
+Standard VAE baseline. Encoder compresses the image through a bottleneck
+(3→32→64→128→256→512, spatial 224→7) and maps to `mu` / `logvar`. Decoder
+mirrors with ConvTranspose2d layers back to 224×224. Loss = MSE recon + KL.
+
+The VAE bottleneck inherently suppresses fine-grained details (including
+gender cues) while preserving coarser structure needed for smile detection.
+
+#### BetaVAE (`models/beta_vae.py`)
+
+Identical architecture to VanillaVAE; the only change is `beta > 1` (default
+`beta=4.0`) on the KL term. The stronger penalty pushes the posterior toward a
+factorised prior, encouraging the encoder to isolate independent factors of
+variation — making it easier to suppress gender while retaining smile.
+
+**Results (10 epochs, 20k CelebA samples):**
+
+| Encoder | Test Utility (Smile ↑) | Test Adversary (Gender ↓→50%) |
+|---|---|---|
+| VanillaVAE | **85.90%** | 88.10% |
+| BetaVAE (β=4) | 81.75% | 85.60% |
+
+BetaVAE trades ~4% utility for slightly better privacy suppression, consistent
+with the beta-VAE paper's utility-disentanglement trade-off.
+
+### Supporting networks
+
+1. **Utility classifier (trainable)**
+   - **ResNet-18** (from `models/cifar_like/resnet.py`), final layer replaced with `nn.Linear(512, 1)`.
+   - Input: encoder output (3-channel image).
+   - Trained with the encoder to minimize **utility loss** (BCE on the utility attribute).
+
+2. **Adversary (trainable)**
+   - Same ResNet-18 with `nn.Linear(512, 1)`.
+   - Tries to predict the **private** attribute from the encoder output.
+   - Trained to minimize BCE; the encoder is trained to maximize this loss.
+
+ResNet uses `F.adaptive_avg_pool2d(out, 1)` so it works for 224x224 inputs.
 ---
 
 ## Training
@@ -193,7 +228,7 @@ Learning rates use **CosineAnnealingLR** over the number of epochs for encoder, 
 | `--learning_rate_enc` | float | 0.001 | Adam learning rate for the encoder. |
 | `--learning_rate_clf` | float | 0.001 | Adam learning rate for the utility classifier. |
 | `--learning_rate_adv` | float | 0.001 | Adam learning rate for the adversary. |
-| `--encoder` | str | `unet` | Encoder architecture: `unet`, `cvae`, or `factor_vae`. |
+| `--encoder` | str | `unet` | Encoder architecture: `unet`, `vanilla_vae`, `beta_vae`, `cvae`, or `factor_vae`. |
 | `--vae_weight` | float | 0.1 | Weight for VAE (recon + KL) loss in ARL when using CVAE/Factor VAE. |
 | `--vae_beta` | float | 1.0 | Beta for KL weight in VAE loss. |
 | `--vae_gamma` | float | 10.0 | Gamma for Factor VAE total correlation term. |
@@ -222,6 +257,29 @@ Factor VAE encoder (disentanglement via total correlation):
 
 ```bash
 python adversarial_training.py --data_dir /path/to/datasets --encoder factor_vae --exp_name factor_vae_run --vae_weight 0.1 --vae_gamma 10.0
+```
+
+Vanilla VAE encoder (standard VAE, beta=1):
+
+```bash
+python adversarial_training.py --data_source huggingface --hf_cache_dir ./hf_cache \
+  --encoder vanilla_vae --exp_name vanilla_vae_run \
+  --vae_weight 0.1 --vae_beta 1.0 --num_epochs 10 --batch_size 16
+```
+
+Beta-VAE encoder (beta=4 for stronger disentanglement):
+
+```bash
+python adversarial_training.py --data_source huggingface --hf_cache_dir ./hf_cache \
+  --encoder beta_vae --exp_name beta_vae_run \
+  --vae_weight 0.1 --vae_beta 4.0 --num_epochs 10 --batch_size 16
+```
+
+On Explorer HPC (sbatch):
+
+```bash
+sbatch scripts/run_vanillavae_full.sh
+sbatch scripts/run_betavae_full.sh
 ```
 
 Pythae VAE variants (trained separately on CelebA, using the `pythae_training.py` script):

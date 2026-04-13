@@ -1,0 +1,31 @@
+{
+  "encoder": "beta_vae",
+  "exp_name": "member1_betavae_10e_20k",
+  "n_test": 2000,
+  "utility_acc": 81.45,
+  "privacy_acc": 85.5,
+  "utility_auc": 0.9006,
+  "privacy_auc": 0.9106,
+  "utility_f1": 0.8229,
+  "nag": 0.8859,
+  "cm_utility": [
+    [
+      767,
+      154
+    ],
+    [
+      217,
+      862
+    ]
+  ],
+  "cm_privacy": [
+    [
+      1399,
+      124
+    ],
+    [
+      166,
+      311
+    ]
+  ]
+}

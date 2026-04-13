@@ -1,0 +1,31 @@
+{
+  "encoder": "residual_vae",
+  "exp_name": "member1_residualvae_10e_20k",
+  "n_test": 2000,
+  "utility_acc": 85.9,
+  "privacy_acc": 86.35,
+  "utility_auc": 0.9318,
+  "privacy_auc": 0.9242,
+  "utility_f1": 0.8669,
+  "nag": 0.9876,
+  "cm_utility": [
+    [
+      800,
+      121
+    ],
+    [
+      161,
+      918
+    ]
+  ],
+  "cm_privacy": [
+    [
+      1389,
+      134
+    ],
+    [
+      139,
+      338
+    ]
+  ]
+}
