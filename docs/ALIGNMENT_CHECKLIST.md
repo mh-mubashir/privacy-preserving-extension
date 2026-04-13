@@ -21,8 +21,8 @@ This document verifies that the current implementation aligns with the goals out
 |-------------|--------|--------|
 | Vanilla VAE | Member 1 | — |
 | β-VAE | Member 1 | — |
-| **CVAE** | ✓ Implemented | `models/cvae.py` |
-| **Factor VAE** | ✓ Implemented | `models/factor_vae.py` |
+| **CVAE** | Implemented; run pending | `models/cvae.py` |
+| **Factor VAE** | Implemented; run pending | `models/factor_vae.py` |
 | VQ-VAE | Member 3 | — |
 
 ---
@@ -71,10 +71,10 @@ This document verifies that the current implementation aligns with the goals out
 
 ---
 
-## 7. Task Division – Member 2 ✓
+## 7. Task Division – Member 2
 
 | Responsibility | Status |
 |----------------|--------|
-| CVAE implementation | ✓ |
-| Factor VAE implementation | ✓ |
-| Adversarial training loop validation | ✓ |
+| CVAE implementation | Implemented; pending one successful training run |
+| Factor VAE implementation | Implemented; pending one successful training run |
+| Adversarial training loop validation | Pending one successful run (CVAE or Factor VAE) |
