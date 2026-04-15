@@ -115,6 +115,10 @@ if __name__ == "__main__":
                         help='Adversary update steps per encoder step (default 1). '
                              'Higher values (e.g. 5) give adversary more time to strengthen, '
                              'increasing pressure on the encoder to suppress private attributes.')
+    parser.add_argument('--latent_dim', type=int, default=256,
+                        help='Latent dimension for VAE encoders. '
+                             'Smaller values (e.g. 32) create a tighter information bottleneck '
+                             'and reduce the capacity to encode private attributes.')
     parser.add_argument('--exp_name', type=str, default='celeb')
     parser.add_argument('--max_train_samples', type=int, default=60000,
                         help='Max number of training samples (for quick sanity runs use e.g. 2048)')
@@ -200,8 +204,10 @@ if __name__ == "__main__":
     val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=False, num_workers=nw)
     test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=nw)
 
+    latent_dim = args.latent_dim
+
     # Encoder: unet, cvae, or factor_vae (3ch in -> 3ch out for ResNet)
-    encoder_model = get_encoder(encoder_name, img_size, unet_size=unet_size)
+    encoder_model = get_encoder(encoder_name, img_size, unet_size=unet_size, latent_dim=latent_dim)
     if torch.cuda.device_count() > 1:
         encoder_model = nn.DataParallel(encoder_model)
     encoder_model = encoder_model.to(device)
@@ -218,7 +224,6 @@ if __name__ == "__main__":
     # Otherwise: ResNet18 on reconstructed image
     use_latent_adv = args.latent_adv
     if use_latent_adv:
-        latent_dim = 256
         adv_model = nn.Sequential(
             nn.Linear(latent_dim, 256), nn.ReLU(),
             nn.Linear(256, 128),        nn.ReLU(),
