@@ -37,10 +37,9 @@ plt.rcParams.update({
 # ════════════════════════════════════════════════════════════════════════════
 # CHART 1 — Utility vs Privacy Accuracy (grouped bar)
 # ════════════════════════════════════════════════════════════════════════════
-models  = ['VanillaVAE\n(λ=1)', 'BetaVAE\n(λ=1)', 'ResidualVAE\n(λ=1)',
-           'ResidualVAE\n(λ=2)', 'CVAE\n(3 ep)', 'FactorVAE\n(3 ep)', 'VQ-VAE']
-utility = [86.1, 81.45, 85.9, 86.85, 55.95, 46.05, 46.05]
-privacy = [88.4, 85.5,  86.35, 87.6,  60.55, 64.25, 76.15]
+models  = ['VanillaVAE', 'BetaVAE', 'ResidualVAE', 'BetaTCVAE', 'FactorVAE', 'VQ-VAE']
+utility = [86.1, 81.5, 85.9, 84.6, 87.0, 46.1]
+privacy = [88.4, 85.5, 86.3, 85.3, 88.7, 76.2]
 
 x = np.arange(len(models))
 w = 0.36
@@ -74,10 +73,9 @@ print("Chart 1 done")
 # ════════════════════════════════════════════════════════════════════════════
 # CHART 2 — NAG Score comparison
 # ════════════════════════════════════════════════════════════════════════════
-nag_models = ['ResidualVAE\n(λ=2)', 'VanillaVAE\n(λ=1)', 'ResidualVAE\n(λ=1)',
-              'BetaVAE\n(λ=1)', 'CVAE\n(3 ep)', 'FactorVAE\n(3 ep)', 'VQ-VAE']
-nag_vals   = [0.9801, 0.9401, 0.9876, 0.8859, 0.564, 0.0, 0.0]
-nag_cols   = [GREEN, BLUE, '#03A9F4', '#29B6F6', GOLD, RED, RED]
+nag_models = ['ResidualVAE', 'BetaTCVAE', 'FactorVAE', 'VanillaVAE', 'BetaVAE', 'VQ-VAE']
+nag_vals   = [0.9876, 0.9802, 0.9561, 0.9401, 0.8859, 0.0]
+nag_cols   = [GREEN, '#03A9F4', BLUE, '#29B6F6', GOLD, RED]
 
 fig, ax = plt.subplots(figsize=(11, 5))
 bars = ax.barh(nag_models, nag_vals, color=nag_cols, edgecolor='none', zorder=3)
@@ -141,9 +139,9 @@ print("Chart 3 done")
 # ════════════════════════════════════════════════════════════════════════════
 # CHART 4 — AUC comparison radar-style bar
 # ════════════════════════════════════════════════════════════════════════════
-auc_models = ['VanillaVAE', 'BetaVAE', 'ResidualVAE', 'CVAE', 'FactorVAE', 'VQ-VAE']
-u_auc = [0.946, 0.911, 0.942, 0.714, 0.595, 0.512]
-p_auc = [0.949, 0.913, 0.941, 0.529, 0.752, 0.509]
+auc_models = ['VanillaVAE', 'BetaVAE', 'ResidualVAE', 'BetaTCVAE', 'FactorVAE', 'VQ-VAE']
+u_auc = [0.9364, 0.9006, 0.9318, 0.9233, 0.9439, 0.512]
+p_auc = [0.9370, 0.9106, 0.9242, 0.9170, 0.9484, 0.509]
 
 x = np.arange(len(auc_models))
 w = 0.36
@@ -240,5 +238,51 @@ side_by_side_netron(
     'docs/charts/netron_vanilla_vs_residual.png'
 )
 print("Netron side-by-side done")
+
+# ════════════════════════════════════════════════════════════════════════════
+# CHART 5 — Information Bottleneck: latent_dim ablation
+# ════════════════════════════════════════════════════════════════════════════
+dims      = [32, 64, 256]
+ib_util   = [75.1, None, 86.9]
+ib_priv   = [83.15, None, 87.6]
+dim_labels = ['dim=32\n(bottleneck)', 'dim=64\n(running…)', 'dim=256\n(baseline)']
+
+fig, ax = plt.subplots(figsize=(9, 5))
+x = [0, 1, 2]
+w = 0.32
+
+# plot only known values
+known_u = [ib_util[0], ib_util[2]]
+known_p = [ib_priv[0], ib_priv[2]]
+known_x = [0, 2]
+
+ax.bar([xi - w/2 for xi in known_x], known_u, w, color=BLUE,  label='Utility Acc', zorder=3)
+ax.bar([xi + w/2 for xi in known_x], known_p, w, color=RED,   label='Privacy Acc', zorder=3)
+
+# pending bar
+ax.bar(1 - w/2, 82, w, color=BLUE,  alpha=0.25, zorder=3, label='_nolegend_')
+ax.bar(1 + w/2, 85, w, color=RED,   alpha=0.25, zorder=3, label='_nolegend_')
+ax.text(1, 83, 'pending', ha='center', va='bottom', fontsize=10, color='white', style='italic')
+
+for xi, u, p in zip(known_x, known_u, known_p):
+    ax.text(xi-w/2, u+0.5, f'{u}%', ha='center', va='bottom', fontsize=10, color=BLUE, fontweight='bold')
+    ax.text(xi+w/2, p+0.5, f'{p}%', ha='center', va='bottom', fontsize=10, color=RED,  fontweight='bold')
+
+ax.axhline(50, color='white', lw=1.2, ls=':', alpha=0.6, label='Random (50%)')
+ax.axhline(85, color=GREEN,   lw=1.2, ls='--', alpha=0.5, label='Utility target (85%)')
+ax.set_xticks(x)
+ax.set_xticklabels(dim_labels, fontsize=11)
+ax.set_ylim(40, 100)
+ax.set_ylabel('Accuracy (%)', fontsize=12)
+ax.set_title('Information Bottleneck — Effect of Latent Dimension\n'
+             'Privacy drops as bottleneck tightens (ResidualVAE, λ=2, two-phase)',
+             fontsize=13, fontweight='bold')
+ax.legend(fontsize=10)
+ax.yaxis.grid(True, zorder=0)
+ax.set_axisbelow(True)
+plt.tight_layout()
+plt.savefig('docs/charts/chart_bottleneck.png', dpi=150, bbox_inches='tight')
+plt.close()
+print("Chart 5 (bottleneck ablation) done")
 
 print("\nAll charts and assets saved to docs/charts/")

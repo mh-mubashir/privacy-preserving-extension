@@ -360,43 +360,42 @@ bottom_note(sl, "Target: < 100ms on Jetson Nano for real-time edge.  VanillaVAE 
 # ════════════════════════════════════════════════════════════════════════════
 sl = new_slide()
 header(sl, "Quantitative Results",
-       "CelebA test set · 2,000 samples · Utility = Smile · Privacy = Gender")
+       "CelebA test set · 2,000 samples · 10 epochs · 20k training samples · Utility = Smile · Privacy = Gender")
 
-cw2 = [2.9, 1.35, 1.35, 1.2, 1.2, 1.25, 2.05]
+cw2 = [2.7, 1.25, 1.25, 1.2, 1.2, 1.1, 1.1, 2.0]
 cx2 = [0.3]
 for w in cw2[:-1]:
     cx2.append(cx2[-1] + w)
 
 rect(sl, 0.3, 1.18, 12.73, 0.52, HDR)
 for i, (h, x) in enumerate(zip(["Model", "Utility %", "Privacy %",
-                                  "U-AUC", "P-AUC", "NAG", "Privacy Status"], cx2)):
-    label(sl, h, x+0.06, 1.22, cw2[i]-0.1, 0.42,
-          size=12, bold=True, colour=GOLD, align=PP_ALIGN.CENTER)
+                                  "U-AUC", "P-AUC", "F1", "NAG", "Best"], cx2)):
+    label(sl, h, x+0.04, 1.22, cw2[i]-0.08, 0.42,
+          size=11, bold=True, colour=GOLD, align=PP_ALIGN.CENTER)
 
 results = [
-    ("VanillaVAE (λ=1)",     "86.1", "88.4", "0.946", "0.949", "0.940", "Leaking",   ACCENT),
-    ("BetaVAE (λ=1)",        "81.5", "85.5", "0.911", "0.913", "0.886", "Leaking",   ACCENT),
-    ("ResidualVAE (λ=1)",    "85.9", "86.4", "0.942", "0.941", "0.988", "Leaking",   ACCENT),
-    ("ResidualVAE (λ=2)",    "86.9", "87.6", "0.941", "0.941", "0.980", "Leaking",   ORANGE),
-    ("CVAE (3 epochs)",      "56.0", "60.6", "0.714", "0.529", "0.564", "Partial",   ORANGE),
-    ("FactorVAE (3 epochs)", "46.1", "64.3", "0.595", "0.752", "0.000", "Collapsed", ACCENT),
-    ("VQ-VAE",               "46.1", "76.2", "0.512", "0.509", "0.000", "Collapsed", ACCENT),
+    ("VanillaVAE",  "86.1", "88.4", "0.936", "0.937", "0.868", "0.940", "",         WHITE),
+    ("BetaVAE",     "81.5", "85.5", "0.901", "0.911", "0.823", "0.886", "Privacy ★", GREEN),
+    ("ResidualVAE", "85.9", "86.3", "0.932", "0.924", "0.867", "0.988", "NAG ★",    GOLD),
+    ("BetaTCVAE",   "84.6", "85.3", "0.923", "0.917", "0.856", "0.980", "Privacy ★", GREEN),
+    ("FactorVAE",   "87.0", "88.7", "0.944", "0.948", "0.876", "0.956", "Utility ★", BLUE),
+    ("VQ-VAE",      "46.1", "76.2", "0.512", "0.509", "—",     "0.000", "Collapsed", ACCENT),
 ]
 for r, row in enumerate(results):
-    name, u, p, ua, pa, nag, status, col = row
-    ty = 1.73 + r * 0.72
+    name, u, p, ua, pa, f1, nag, badge, bcol = row
+    ty = 1.73 + r * 0.81
     bg_fill = PANEL if r % 2 == 0 else RGBColor(0x15, 0x15, 0x2C)
-    rect(sl, 0.3, ty, 12.73, 0.70, bg_fill)
-    vals = [name, u+"%", p+"%", ua, pa, nag, status]
+    rect(sl, 0.3, ty, 12.73, 0.79, bg_fill)
+    vals = [name, u+"%", p+"%", ua, pa, f1, nag, badge]
     for i, (v, x) in enumerate(zip(vals, cx2)):
         c = (GOLD if i == 0 else
-             (GREEN if i == 1 and float(u) >= 80 else
-              (ORANGE if i == 2 and float(p) < 75 else
-               (col if i == 6 else WHITE))))
-        label(sl, v, x+0.06, ty+0.17, cw2[i]-0.1, 0.38,
-              size=12, bold=(i == 0), colour=c, align=PP_ALIGN.CENTER)
+             (GREEN if i == 1 and float(u) >= 85 else
+              (GREEN if i == 2 and float(p) <= 86 else
+               (bcol if i == 7 else WHITE))))
+        label(sl, v, x+0.04, ty+0.22, cw2[i]-0.08, 0.38,
+              size=11, bold=(i == 0 or i == 7), colour=c, align=PP_ALIGN.CENTER)
 
-bottom_note(sl, "Goal: Utility > 85%  and  Privacy ≈ 50%.  Best NAG: ResidualVAE (0.988)")
+bottom_note(sl, "Best Utility: FactorVAE 87.0%  ·  Best Privacy: BetaTCVAE/BetaVAE 85.3-85.5%  ·  Best Balance (NAG): ResidualVAE 0.988")
 
 # ════════════════════════════════════════════════════════════════════════════
 # 9 — UTILITY vs PRIVACY CHART
@@ -405,7 +404,7 @@ sl = new_slide()
 header(sl, "Utility vs Privacy Accuracy — All Models")
 picture(sl, "docs/charts/chart_utility_privacy.png", 1.0, 1.2, 11.3, 5.65)
 bottom_note(sl,
-    "Privacy accuracy should be ≈50% (random).  All models score 85–90% — the adversary can still predict gender well.")
+    "FactorVAE: best utility (87%).  BetaTCVAE & BetaVAE: best privacy (85.3-85.5%).  All models still leak gender — ideal is 50%.")
 
 # ════════════════════════════════════════════════════════════════════════════
 # 10 — NAG
@@ -438,10 +437,41 @@ bottom_note(sl,
     "Increasing λ from 1→3 barely moves privacy accuracy.  The bottleneck is the adversary's strength, not the penalty weight.")
 
 # ════════════════════════════════════════════════════════════════════════════
-# 13 — TRAINING CURVE
+# 13 — INFORMATION BOTTLENECK ABLATION
 # ════════════════════════════════════════════════════════════════════════════
 sl = new_slide()
-header(sl, "Two-Phase Training Curve — ResidualVAE (λ=2.0)",
+header(sl, "Information Bottleneck — Latent Dimension Ablation",
+       "ResidualVAE · two-phase training (λ=2) · 13 epochs · 20k samples")
+
+picture(sl, "docs/charts/chart_bottleneck.png", 0.6, 1.2, 8.0, 5.3)
+
+# right panel — insight cards
+insights = [
+    ("dim=256 (baseline)",
+     "87.6% privacy — encoder has 256 slots, gender hides easily alongside smile.",
+     ACCENT),
+    ("dim=32 (tight bottleneck)",
+     "83.15% privacy ↓ — first real improvement. But utility fell to 75.1% — too aggressive.",
+     ORANGE),
+    ("dim=64 (sweet spot?)",
+     "Running now. Prediction: utility recovers to ~82%, privacy stays suppressed ~84%.",
+     GREEN),
+    ("Key insight",
+     "Compressing latent space forces the encoder to keep only what's needed for smile — gender gets squeezed out.",
+     GOLD),
+]
+for i, (title, desc, col) in enumerate(insights):
+    ty = 1.25 + i * 1.48
+    rect(sl, 8.85, ty, 4.1, 1.34, PANEL)
+    rect(sl, 8.85, ty, 0.14, 1.34, col)
+    label(sl, title, 9.12, ty+0.1,  3.7, 0.42, size=12, bold=True, colour=col)
+    label(sl, desc,  9.12, ty+0.52, 3.7, 0.72, size=10, colour=MUTED)
+
+# ════════════════════════════════════════════════════════════════════════════
+# 14 — TRAINING CURVE
+# ════════════════════════════════════════════════════════════════════════════
+sl = new_slide()
+header(sl, "Two-Phase Training — ResidualVAE (λ=2.0)",
        "Phase 1: encoder learns utility (adversary OFF)  →  Phase 2: adversary activated")
 
 picture(sl, "docs/residualvae_training_curve.png", 0.4, 1.2, 8.2, 5.5)
@@ -507,17 +537,21 @@ header(sl, "Challenges & Why They Happened")
 
 challenges = [
     ("Privacy accuracy won't drop below ~85%",
-     "Smile and gender are correlated in CelebA — lipstick, jaw structure, skin texture. The encoder cannot fully decouple them in 13 epochs with a simple ARL objective.",
+     "Smile and gender are correlated in CelebA — lipstick, jaw structure, skin texture. "
+     "Even the best model (BetaTCVAE) only reaches 85.3%. Ideal is 50%.",
      ACCENT),
-    ("Adversary keeps pace with the encoder",
-     "ARL trains both simultaneously. As the encoder improves its representations, the adversary improves too. They converge to an equilibrium where privacy is not suppressed.",
+    ("Higher λ made things worse, not better",
+     "Increasing λ from 1→5 barely changed privacy (88.4% → still ~88%). "
+     "The adversary is too capable — stronger penalty alone cannot overcome the correlation.",
      ORANGE),
+    ("Information bottleneck trade-off",
+     "Reducing latent_dim 256→32 was the first experiment to lower privacy (87.6%→83.15%). "
+     "But utility fell from 86.9%→75.1%. Currently testing dim=64 to find the sweet spot.",
+     GREEN),
     ("VQ-VAE codebook collapse",
-     "All face images mapped to the same codebook entry — model output became a constant average face. Both utility and privacy dropped to random chance. Root cause: learning rate / codebook size mismatch.",
+     "All face images mapped to the same codebook entry — output became a constant average face. "
+     "Both utility and privacy dropped to near-random. Root cause: codebook capacity vs image diversity mismatch.",
      ACCENT),
-    ("Latent adversary with 5 steps made privacy worse",
-     "Latent z contains more raw gender signal than a reconstructed image. With 5 adversary steps per encoder step, adversary loss saturated at 0.09 — leaving the encoder no gradient signal to suppress gender.",
-     ORANGE),
 ]
 for i, (title, desc, col) in enumerate(challenges):
     ty = 1.22 + i * 1.5
