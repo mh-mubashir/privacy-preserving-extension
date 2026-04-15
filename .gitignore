@@ -38,3 +38,20 @@ random/
 hf_cache/
 pythae_runs/
 onnx_exports/
+
+# Generated presentation assets (local only)
+docs/charts/
+*.pptx
+make_presentation.py
+make_charts.py
+
+# PDFs
+*.pdf
+
+# Intermediate reconstruction frames (keep only epoch01 and epoch10)
+visuals/*epoch0[2-9].png
+visuals/*epoch[0-9][2-9].png
+
+# Slurm logs
+slurm-*.out
+slurm-*.err
