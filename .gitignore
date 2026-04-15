@@ -39,11 +39,8 @@ hf_cache/
 pythae_runs/
 onnx_exports/
 
-# Generated presentation assets (local only)
+# Generated chart images (regenerate with make_charts.py)
 docs/charts/
-*.pptx
-make_presentation.py
-make_charts.py
 
 # PDFs
 *.pdf
