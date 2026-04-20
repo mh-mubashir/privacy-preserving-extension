@@ -119,6 +119,11 @@ if __name__ == "__main__":
                         help='Latent dimension for VAE encoders. '
                              'Smaller values (e.g. 32) create a tighter information bottleneck '
                              'and reduce the capacity to encode private attributes.')
+    parser.add_argument('--freeze_clf', action='store_true',
+                        help='Alternating optimisation: freeze the utility classifier while updating '
+                             'the encoder, then update the classifier on detached (frozen) encoder '
+                             'outputs. Breaks the co-adaptation loop where the classifier improves '
+                             'simultaneously with the encoder, giving the adversary a harder target.')
     parser.add_argument('--exp_name', type=str, default='celeb')
     parser.add_argument('--max_train_samples', type=int, default=60000,
                         help='Max number of training samples (for quick sanity runs use e.g. 2048)')
@@ -265,9 +270,16 @@ if __name__ == "__main__":
 
     warmup_epochs = args.warmup_epochs
     adv_steps     = args.adv_steps
+    freeze_clf    = args.freeze_clf
     if warmup_epochs > 0:
         print(f"Two-phase training: {warmup_epochs} warmup epoch(s) (utility only) "
               f"then {num_epochs} ARL epoch(s) (utility + privacy adversary)", flush=True)
+    if freeze_clf:
+        print("Alternating optimisation ENABLED (--freeze_clf): encoder and classifier "
+              "updated in separate steps — classifier sees detached encoder outputs.", flush=True)
+    else:
+        print("Joint optimisation (baseline): encoder and classifier updated together "
+              "in the same backward pass.", flush=True)
 
     num_batches = len(train_loader)
     for epoch in range(num_epochs):
@@ -363,18 +375,43 @@ if __name__ == "__main__":
             else:
                 enc_loss = arl_loss
 
-            optimizer_enc.zero_grad()
-            optimizer_clf.zero_grad()
-            enc_loss.backward()
-            torch.nn.utils.clip_grad_norm_(encoder_model.parameters(), max_norm=1.0)
-            torch.nn.utils.clip_grad_norm_(clf_model.parameters(), max_norm=1.0)
-            if torch.isnan(enc_loss):
-                print(f"  WARNING: NaN enc_loss at step {i+1}, skipping update", flush=True)
+            if freeze_clf:
+                # ── Alternating optimisation ──────────────────────────────────
+                # Step 1: Update encoder ONLY.  Classifier weights are frozen so
+                # the adversary cannot exploit a simultaneously-improving clf.
+                optimizer_enc.zero_grad()
+                enc_loss.backward()
+                torch.nn.utils.clip_grad_norm_(encoder_model.parameters(), max_norm=1.0)
+                if torch.isnan(enc_loss):
+                    print(f"  WARNING: NaN enc_loss at step {i+1}, skipping encoder update", flush=True)
+                    optimizer_enc.zero_grad()
+                else:
+                    optimizer_enc.step()
+
+                # Step 2: Update classifier on DETACHED encoder output so that
+                # clf gradients never flow back into the encoder.
+                blurred_clf   = blurred.detach()
+                u_logits_frz  = clf_model(blurred_clf).flatten()
+                loss_clf_frz  = criterion(u_logits_frz, targets_u)
+                optimizer_clf.zero_grad()
+                loss_clf_frz.backward()
+                torch.nn.utils.clip_grad_norm_(clf_model.parameters(), max_norm=1.0)
+                if not torch.isnan(loss_clf_frz):
+                    optimizer_clf.step()
+            else:
+                # ── Original joint update (baseline) ─────────────────────────
                 optimizer_enc.zero_grad()
                 optimizer_clf.zero_grad()
-            else:
-                optimizer_enc.step()
-                optimizer_clf.step()
+                enc_loss.backward()
+                torch.nn.utils.clip_grad_norm_(encoder_model.parameters(), max_norm=1.0)
+                torch.nn.utils.clip_grad_norm_(clf_model.parameters(), max_norm=1.0)
+                if torch.isnan(enc_loss):
+                    print(f"  WARNING: NaN enc_loss at step {i+1}, skipping update", flush=True)
+                    optimizer_enc.zero_grad()
+                    optimizer_clf.zero_grad()
+                else:
+                    optimizer_enc.step()
+                    optimizer_clf.step()
 
             # Train Factor VAE discriminator AFTER encoder/classifier update to avoid
             # modifying discriminator parameters between forward and backward passes
