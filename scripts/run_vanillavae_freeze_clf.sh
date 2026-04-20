@@ -1,37 +1,47 @@
 #!/bin/bash
-#SBATCH --job-name=vanillavae_freeze_clf
-#SBATCH --output=slurm-%j.out
-#SBATCH --error=slurm-%j.err
+#SBATCH --job-name=m1_van_freeze
 #SBATCH --partition=courses-gpu
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
-#SBATCH --time=01:30:00
+#SBATCH --mem=16G
+#SBATCH --cpus-per-task=2
+#SBATCH --time=03:00:00
+#SBATCH --output=/scratch/%u/pp_ext_member2/logs/vanillavae_freeze_%j.out
+#SBATCH --error=/scratch/%u/pp_ext_member2/logs/vanillavae_freeze_%j.err
 
-set -e
+source /shared/EL9/explorer/anaconda3/2024.06/etc/profile.d/conda.sh
+conda activate pp_ext_member2_v2
+module load cuda/12.1.1
 
-echo "=== VanillaVAE  --freeze_clf  alternating-optimisation run ==="
-echo "Node: $(hostname)  |  GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')"
+REPO_DIR="/courses/EECE5698.202630/students/sureshkumar.si/pp_ext_member2/privacy-preserving-extension"
+OUT_DIR="/scratch/$USER/pp_ext_member2/arls"
+mkdir -p "$OUT_DIR" "/scratch/$USER/pp_ext_member2/logs"
+cd "$OUT_DIR"
+
+echo "== VanillaVAE --freeze_clf alternating-optimisation =="
+echo "Node: $(hostname)  GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader)"
 echo "Start: $(date)"
 
-source ~/.bashrc
-conda activate privacy 2>/dev/null || true
-
-python adversarial_training.py \
+PYTHONPATH="$REPO_DIR" python "$REPO_DIR/adversarial_training.py" \
   --encoder         vanilla_vae \
+  --data_source     huggingface \
+  --hf_cache_dir    /scratch/$USER/pp_ext_member2/hf_cache \
+  --device          cuda \
+  --exp_name        member1_vanillavae_freeze_clf \
   --num_epochs      10 \
   --warmup_epochs   3 \
-  --lambda_clf      2.0 \
-  --vae_weight      0.05 \
-  --vae_beta        1.0 \
-  --latent_dim      256 \
-  --freeze_clf \
-  --data_source     huggingface \
+  --batch_size      16 \
   --max_train_samples 20000 \
   --max_val_samples   2000 \
   --max_test_samples  2000 \
-  --batch_size      64 \
-  --num_workers     4 \
-  --exp_name        member1_vanillavae_freeze_clf
+  --vae_weight      0.05 \
+  --vae_beta        1.0 \
+  --lambda_clf      2.0 \
+  --latent_dim      256 \
+  --freeze_clf \
+  --learning_rate_enc 0.0003 \
+  --learning_rate_clf 0.001 \
+  --learning_rate_adv 0.001 \
+  --num_workers     1 \
+  2>&1 | tee "$OUT_DIR/member1_vanillavae_freeze_clf.log"
 
 echo "End: $(date)"
