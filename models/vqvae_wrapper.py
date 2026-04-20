@@ -17,6 +17,30 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+class GradientReversalFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x, lambda_):
+        ctx.save_for_backward(torch.tensor(lambda_))
+        return x.clone()
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        lambda_, = ctx.saved_tensors
+        return -lambda_ * grad_output, None
+
+
+class GradientReversalLayer(nn.Module):
+    def __init__(self, lambda_=1.0):
+        super().__init__()
+        self.lambda_ = lambda_
+
+    def set_lambda(self, lambda_):
+        self.lambda_ = lambda_
+
+    def forward(self, x):
+        return GradientReversalFunction.apply(x, self.lambda_)
+
+
 class ResidualLayer(nn.Module):
     def __init__(self, in_dim, h_dim, res_h_dim):
         super().__init__()
