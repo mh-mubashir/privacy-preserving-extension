@@ -38,3 +38,4 @@ random/
 hf_cache/
 pythae_runs/
 *.pt
+visuals/
