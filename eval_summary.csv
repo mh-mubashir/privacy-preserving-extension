@@ -1,0 +1,2 @@
+encoder,exp_name,n_test,utility_acc,privacy_acc,utility_auc,privacy_auc,utility_f1,nag,priv_at_70pct_util,priv_at_75pct_util,priv_at_80pct_util,priv_at_85pct_util
+vq_vae,member3_vqvae_10e_20k,19962,89.01,61.9,0.9548,0.6322,0.888,3.2787,38.65,38.7,39.01,42.7

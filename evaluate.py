@@ -104,7 +104,8 @@ class CelebAHFDataset(torch.utils.data.Dataset):
 
 
 def build_test_loader(args):
-    tfm = transforms.Compose([transforms.Resize((224, 224)), transforms.ToTensor()])
+    img_size = getattr(args, 'img_size', 224)
+    tfm = transforms.Compose([transforms.Resize((img_size, img_size)), transforms.ToTensor()])
     if args.data_source == 'huggingface':
         ds = CelebAHFDataset('test', tfm, cache_dir=args.hf_cache_dir)
     else:
@@ -169,9 +170,8 @@ def compute_privacy_at_k_utility(labels_u, probs_u, labels_p, probs_p, k_levels)
 
 # ── Model loading ─────────────────────────────────────────────────────────────
 
-def load_models(encoder_name, exp_name, checkpoint_dir, device):
-    """Load encoder, classifier, and adversary from checkpoints."""
-    encoder = get_encoder(encoder_name, img_size=224).to(device)
+def load_models(encoder_name, exp_name, checkpoint_dir, device, img_size=224):
+    encoder = get_encoder(encoder_name, img_size=img_size).to(device)
     clf = ResNet18(); clf.linear = nn.Linear(512, 1); clf = clf.to(device)
     adv = ResNet18(); adv.linear = nn.Linear(512, 1); adv = adv.to(device)
 
@@ -290,8 +290,8 @@ def print_results(encoder_name, exp_name, n, m):
 
 # ── Core evaluation ──────────────────────────────────────────────────────────
 
-def evaluate_one(encoder_name, exp_name, checkpoint_dir, test_loader, device, k_levels):
-    encoder, clf, adv = load_models(encoder_name, exp_name, checkpoint_dir, device)
+def evaluate_one(encoder_name, exp_name, checkpoint_dir, test_loader, device, k_levels, img_size=224):
+    encoder, clf, adv = load_models(encoder_name, exp_name, checkpoint_dir, device, img_size=img_size)
     if encoder is None:
         return None
 
@@ -377,6 +377,8 @@ if __name__ == "__main__":
     p.add_argument('--device',           type=str, default='cuda')
     p.add_argument('--k_levels',         type=str, default='70,75,80,85',
                    help='Comma-separated utility % thresholds for Privacy at K metric')
+    p.add_argument('--img_size', type=int, default=224,
+               help='Image size used during training (use 64 for VQ-VAE)')
     args = p.parse_args()
 
     if args.device == 'cuda' and not torch.cuda.is_available():
@@ -400,7 +402,7 @@ if __name__ == "__main__":
 
     results = []
     for enc, name in zip(encoders, names):
-        r = evaluate_one(enc, name, args.checkpoint_dir, loader, device, k_levels)
+        r = evaluate_one(enc, name, args.checkpoint_dir, loader, device, k_levels, img_size=args.img_size)
         if r:
             save_results(r, args.checkpoint_dir)
             results.append(r)
