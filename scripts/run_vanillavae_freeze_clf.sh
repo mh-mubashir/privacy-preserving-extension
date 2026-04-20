@@ -12,7 +12,7 @@ source /shared/EL9/explorer/anaconda3/2024.06/etc/profile.d/conda.sh
 conda activate pp_ext_member2_v2
 module load cuda/12.1.1
 
-REPO_DIR="/courses/EECE5698.202630/students/sureshkumar.si/pp_ext_member2/privacy-preserving-extension"
+REPO_DIR="$HOME/privacy-preserving-extension"
 OUT_DIR="/scratch/$USER/pp_ext_member2/arls"
 mkdir -p "$OUT_DIR" "/scratch/$USER/pp_ext_member2/logs"
 cd "$OUT_DIR"
