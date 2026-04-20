@@ -29,7 +29,7 @@ PYTHONPATH="$REPO_DIR" python "$REPO_DIR/adversarial_training.py" \
   --exp_name        member1_vanillavae_freeze_clf \
   --num_epochs      10 \
   --warmup_epochs   3 \
-  --batch_size      16 \
+  --batch_size      8 \
   --max_train_samples 20000 \
   --max_val_samples   2000 \
   --max_test_samples  2000 \
