@@ -120,10 +120,16 @@ if __name__ == "__main__":
                              'Smaller values (e.g. 32) create a tighter information bottleneck '
                              'and reduce the capacity to encode private attributes.')
     parser.add_argument('--freeze_clf', action='store_true',
-                        help='Alternating optimisation: freeze the utility classifier while updating '
-                             'the encoder, then update the classifier on detached (frozen) encoder '
-                             'outputs. Breaks the co-adaptation loop where the classifier improves '
-                             'simultaneously with the encoder, giving the adversary a harder target.')
+                        help='Alternating optimisation (ARL phase only): encoder step first, then '
+                             'utility-classifier step on detached reconstructions. Stops clf from '
+                             'sharing one backward with the encoder (professor co-adaptation concern).')
+    parser.add_argument('--freeze_utility_clf_arl', action='store_true',
+                        help='During ARL (after warmup), do not update the utility classifier at all — '
+                             'only the encoder/decoder and adversary train. The smile head stays fixed '
+                             'while the encoder is pushed for privacy; gradients from utility loss still '
+                             'flow into the encoder through the clf forward pass. Addresses: "classifier '
+                             'keeps improving with the decoder." Mutually exclusive with --freeze_clf '
+                             'during ARL; if both are set, --freeze_utility_clf_arl wins.')
     parser.add_argument('--exp_name', type=str, default='celeb')
     parser.add_argument('--max_train_samples', type=int, default=60000,
                         help='Max number of training samples (for quick sanity runs use e.g. 2048)')
@@ -270,16 +276,39 @@ if __name__ == "__main__":
 
     warmup_epochs = args.warmup_epochs
     adv_steps     = args.adv_steps
-    freeze_clf    = args.freeze_clf
+    freeze_utility_arl = args.freeze_utility_clf_arl
+    freeze_clf_alt = args.freeze_clf and not freeze_utility_arl
+    if args.freeze_clf and freeze_utility_arl:
+        print("Note: --freeze_clf ignored during ARL because --freeze_utility_clf_arl is set.", flush=True)
     if warmup_epochs > 0:
         print(f"Two-phase training: {warmup_epochs} warmup epoch(s) (utility only) "
               f"then {num_epochs} ARL epoch(s) (utility + privacy adversary)", flush=True)
-    if freeze_clf:
-        print("Alternating optimisation ENABLED (--freeze_clf): encoder and classifier "
-              "updated in separate steps — classifier sees detached encoder outputs.", flush=True)
+    print(
+        "Training heads: utility clf = smile (ResNet on recon); adversary = gender "
+        "(ResNet or MLP on recon or z). Adversary is always updated on DETACHED tensors — "
+        "its optimiser never steps encoder weights.",
+        flush=True,
+    )
+    if freeze_utility_arl:
+        print(
+            "ARL utility-clf mode: FROZEN WEIGHTS (--freeze_utility_clf_arl). After warmup, "
+            "the smile classifier is not updated; encoder still gets smile gradients through clf. "
+            "Matches professor feedback: the smile head no longer 'rides along' as the decoder improves. "
+            "The gender adversary still trains each batch on detached reconstructions (standard ARL).",
+            flush=True,
+        )
+    elif freeze_clf_alt:
+        print(
+            "ARL utility-clf mode: ALTERNATING (--freeze_clf). Encoder step, then clf step on "
+            "detached recon — clf gradients never update encoder in the clf step.",
+            flush=True,
+        )
     else:
-        print("Joint optimisation (baseline): encoder and classifier updated together "
-              "in the same backward pass.", flush=True)
+        print(
+            "ARL utility-clf mode: JOINT (baseline). Encoder and utility clf share one backward "
+            "from (loss_clf - lambda*loss_adv + VAE); both optimisers step together.",
+            flush=True,
+        )
 
     num_batches = len(train_loader)
     for epoch in range(num_epochs):
@@ -375,10 +404,37 @@ if __name__ == "__main__":
             else:
                 enc_loss = arl_loss
 
-            if freeze_clf:
-                # ── Alternating optimisation ──────────────────────────────────
-                # Step 1: Update encoder ONLY.  Classifier weights are frozen so
-                # the adversary cannot exploit a simultaneously-improving clf.
+            if in_warmup:
+                # Warmup: train smile head with encoder (no adversary in loss).
+                optimizer_enc.zero_grad()
+                optimizer_clf.zero_grad()
+                enc_loss.backward()
+                torch.nn.utils.clip_grad_norm_(encoder_model.parameters(), max_norm=1.0)
+                torch.nn.utils.clip_grad_norm_(clf_model.parameters(), max_norm=1.0)
+                if torch.isnan(enc_loss):
+                    print(f"  WARNING: NaN enc_loss at step {i+1}, skipping update", flush=True)
+                    optimizer_enc.zero_grad()
+                    optimizer_clf.zero_grad()
+                else:
+                    optimizer_enc.step()
+                    optimizer_clf.step()
+            elif freeze_utility_arl:
+                # ARL: professor-style — do not update utility clf weights; encoder still
+                # minimises smile loss through clf(blurred), so gradients reach encoder only.
+                optimizer_enc.zero_grad()
+                optimizer_clf.zero_grad()
+                enc_loss.backward()
+                torch.nn.utils.clip_grad_norm_(encoder_model.parameters(), max_norm=1.0)
+                for p in clf_model.parameters():
+                    if p.grad is not None:
+                        p.grad = None
+                if torch.isnan(enc_loss):
+                    print(f"  WARNING: NaN enc_loss at step {i+1}, skipping encoder update", flush=True)
+                    optimizer_enc.zero_grad()
+                else:
+                    optimizer_enc.step()
+            elif freeze_clf_alt:
+                # ARL: alternating — encoder step, then clf on detached recon.
                 optimizer_enc.zero_grad()
                 enc_loss.backward()
                 torch.nn.utils.clip_grad_norm_(encoder_model.parameters(), max_norm=1.0)
@@ -388,18 +444,16 @@ if __name__ == "__main__":
                 else:
                     optimizer_enc.step()
 
-                # Step 2: Update classifier on DETACHED encoder output so that
-                # clf gradients never flow back into the encoder.
-                blurred_clf   = blurred.detach()
-                u_logits_frz  = clf_model(blurred_clf).flatten()
-                loss_clf_frz  = criterion(u_logits_frz, targets_u)
+                blurred_clf = blurred.detach()
+                u_logits_frz = clf_model(blurred_clf).flatten()
+                loss_clf_frz = criterion(u_logits_frz, targets_u)
                 optimizer_clf.zero_grad()
                 loss_clf_frz.backward()
                 torch.nn.utils.clip_grad_norm_(clf_model.parameters(), max_norm=1.0)
                 if not torch.isnan(loss_clf_frz):
                     optimizer_clf.step()
             else:
-                # ── Original joint update (baseline) ─────────────────────────
+                # ARL: joint baseline — encoder + utility clf one backward.
                 optimizer_enc.zero_grad()
                 optimizer_clf.zero_grad()
                 enc_loss.backward()

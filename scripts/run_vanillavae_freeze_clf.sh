@@ -17,20 +17,20 @@ OUT_DIR="/scratch/$USER/pp_ext_member2/arls"
 mkdir -p "$OUT_DIR" "/scratch/$USER/pp_ext_member2/logs"
 cd "$OUT_DIR"
 
-echo "== VanillaVAE --freeze_clf alternating-optimisation =="
+echo "== VanillaVAE --freeze_utility_clf_arl (professor: no smile-clf updates during ARL) =="
 echo "Node: $(hostname)  GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader)"
 echo "Start: $(date)"
-echo "Note: batch_size=8 for 12GB P100 (freeze_clf adds an extra clf forward)."
+echo "Note: batch_size=16 (same VRAM as joint ARL; alternating --freeze_clf needs smaller batch on P100)."
 
 PYTHONPATH="$REPO_DIR" python "$REPO_DIR/adversarial_training.py" \
   --encoder         vanilla_vae \
   --data_source     huggingface \
   --hf_cache_dir    /scratch/$USER/pp_ext_member2/hf_cache \
   --device          cuda \
-  --exp_name        member1_vanillavae_freeze_clf \
+  --exp_name        member1_vanillavae_freeze_utility_arl \
   --num_epochs      10 \
   --warmup_epochs   3 \
-  --batch_size      8 \
+  --batch_size      16 \
   --max_train_samples 20000 \
   --max_val_samples   2000 \
   --max_test_samples  2000 \
@@ -38,11 +38,11 @@ PYTHONPATH="$REPO_DIR" python "$REPO_DIR/adversarial_training.py" \
   --vae_beta        1.0 \
   --lambda_clf      2.0 \
   --latent_dim      256 \
-  --freeze_clf \
+  --freeze_utility_clf_arl \
   --learning_rate_enc 0.0003 \
   --learning_rate_clf 0.001 \
   --learning_rate_adv 0.001 \
   --num_workers     0 \
-  2>&1 | tee "$OUT_DIR/member1_vanillavae_freeze_clf.log"
+  2>&1 | tee "$OUT_DIR/member1_vanillavae_freeze_utility_arl.log"
 
 echo "End: $(date)"
