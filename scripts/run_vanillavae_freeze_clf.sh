@@ -2,7 +2,7 @@
 #SBATCH --job-name=m1_van_freeze
 #SBATCH --partition=courses-gpu
 #SBATCH --gres=gpu:1
-#SBATCH --mem=16G
+#SBATCH --mem=32G
 #SBATCH --cpus-per-task=2
 #SBATCH --time=03:00:00
 #SBATCH --output=/scratch/%u/pp_ext_member2/logs/vanillavae_freeze_%j.out
@@ -29,7 +29,7 @@ PYTHONPATH="$REPO_DIR" python "$REPO_DIR/adversarial_training.py" \
   --exp_name        member1_vanillavae_freeze_clf \
   --num_epochs      10 \
   --warmup_epochs   3 \
-  --batch_size      8 \
+  --batch_size      16 \
   --max_train_samples 20000 \
   --max_val_samples   2000 \
   --max_test_samples  2000 \
