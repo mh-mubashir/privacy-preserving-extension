@@ -490,7 +490,9 @@ if __name__ == "__main__":
                 running_loss_adv = 0.0
 
         scheduler_enc.step()
-        scheduler_clf.step()
+        # Only advance clf LR schedule when clf optimiser actually ran this epoch.
+        if in_warmup or not freeze_utility_arl:
+            scheduler_clf.step()
         scheduler_adv.step()
 
         # Validation
