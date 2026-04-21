@@ -41,7 +41,7 @@ PYTHONPATH="$REPO_DIR" python "$REPO_DIR/adversarial_training.py" \
   --learning_rate_enc 0.0003 \
   --learning_rate_clf 0.001 \
   --learning_rate_adv 0.001 \
-  --num_workers     1 \
+  --num_workers     0 \
   2>&1 | tee "$OUT_DIR/member1_vanillavae_freeze_clf.log"
 
 echo "End: $(date)"
