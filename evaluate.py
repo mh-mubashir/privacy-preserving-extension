@@ -103,8 +103,9 @@ def build_test_loader(args):
         ds = CelebAHFDataset('test', tfm, cache_dir=args.hf_cache_dir)
     if args.max_test_samples and args.max_test_samples < len(ds):
         ds = Subset(ds, list(range(args.max_test_samples)))
+    pin = getattr(args, 'device', 'cpu') == 'cuda'
     return DataLoader(ds, batch_size=args.batch_size,
-                      shuffle=False, num_workers=args.num_workers, pin_memory=True)
+                      shuffle=False, num_workers=args.num_workers, pin_memory=pin)
 
 
 def compute_nag(utility_acc, privacy_acc):
@@ -139,6 +140,14 @@ def compute_privacy_at_k_utility(labels_u, probs_u, labels_p, probs_p, k_levels)
     return results
 
 
+def _load_checkpoint(path, map_location):
+    """Load state dict; prefer weights_only=True on newer PyTorch (avoids FutureWarning)."""
+    try:
+        return torch.load(path, map_location=map_location, weights_only=True)
+    except (TypeError, RuntimeError):
+        return torch.load(path, map_location=map_location)
+
+
 def load_models(encoder_name, exp_name, checkpoint_dir, device, img_size=224, latent_dim=256):
     encoder = get_encoder(
         encoder_name, img_size=img_size, latent_dim=latent_dim,
@@ -155,7 +164,7 @@ def load_models(encoder_name, exp_name, checkpoint_dir, device, img_size=224, la
         if not os.path.exists(path):
             print(f"  ERROR: checkpoint not found: {path}")
             return None, None, None
-        model.load_state_dict(torch.load(path, map_location=device))
+        model.load_state_dict(_load_checkpoint(path, map_location=device))
 
     encoder.eval()
     clf.eval()
@@ -352,7 +361,9 @@ if __name__ == "__main__":
     p.add_argument('--max_test_samples', type=int, default=None)
     p.add_argument('--batch_size', type=int, default=32)
     p.add_argument('--num_workers', type=int, default=1)
-    p.add_argument('--device', type=str, default='cuda')
+    p.add_argument('--device', type=str, default='auto',
+                   choices=['auto', 'cuda', 'cpu'],
+                   help="'auto' uses CUDA if available (use sbatch/srun on Explorer login has no GPU)")
     p.add_argument('--k_levels', type=str, default='70,75,80,85',
                    help='Comma-separated utility %% thresholds for Privacy at K')
     p.add_argument('--img_size', type=int, default=224,
@@ -361,10 +372,16 @@ if __name__ == "__main__":
                    help='Must match training (e.g. 32 for information-bottleneck ResidualVAE)')
     args = p.parse_args()
 
-    if args.device == 'cuda' and not torch.cuda.is_available():
-        print("WARNING: CUDA requested but not available, falling back to CPU")
+    if args.device == 'auto':
+        args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    elif args.device == 'cuda' and not torch.cuda.is_available():
+        print("WARNING: --device cuda but CUDA not available, using CPU")
         args.device = 'cpu'
     device = torch.device(args.device)
+    if device.type == 'cpu':
+        print("INFO: Eval on CPU (slow on full CelebA test). "
+              "Explorer login nodes have no GPU — use: sbatch scripts/sbatch_eval_member1.sh",
+              flush=True)
 
     if args.data_source in ('local', 'torchvision') and args.data_dir is None:
         args.data_dir = './data'

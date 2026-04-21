@@ -3,7 +3,10 @@
 # Run from anywhere after: cd ~/privacy-preserving-extension && git pull
 #
 # Usage on Explorer:
-#   bash scripts/eval_member1_models.sh
+#   Login node has NO GPU → slow CPU eval. Prefer:
+#     sbatch scripts/sbatch_eval_member1.sh
+#   Or after an interactive GPU (srun ...):
+#     bash scripts/eval_member1_models.sh
 #
 # Override checkpoint dir if yours differs:
 #   CHECKPOINT_DIR=/scratch/$USER/pp_ext_member2/arls bash scripts/eval_member1_models.sh
@@ -26,7 +29,7 @@ python evaluate.py \
   --checkpoint_dir "$CHECKPOINT_DIR" \
   --data_source huggingface \
   --hf_cache_dir "$HF_CACHE" \
-  --device cuda \
+  --device auto \
   --k_levels 70,75,80,85 \
   --latent_dim 256
 
