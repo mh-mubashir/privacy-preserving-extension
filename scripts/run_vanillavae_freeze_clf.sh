@@ -20,6 +20,7 @@ cd "$OUT_DIR"
 echo "== VanillaVAE --freeze_clf alternating-optimisation =="
 echo "Node: $(hostname)  GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader)"
 echo "Start: $(date)"
+echo "Note: batch_size=8 for 12GB P100 (freeze_clf adds an extra clf forward)."
 
 PYTHONPATH="$REPO_DIR" python "$REPO_DIR/adversarial_training.py" \
   --encoder         vanilla_vae \
@@ -29,7 +30,7 @@ PYTHONPATH="$REPO_DIR" python "$REPO_DIR/adversarial_training.py" \
   --exp_name        member1_vanillavae_freeze_clf \
   --num_epochs      10 \
   --warmup_epochs   3 \
-  --batch_size      16 \
+  --batch_size      8 \
   --max_train_samples 20000 \
   --max_val_samples   2000 \
   --max_test_samples  2000 \
