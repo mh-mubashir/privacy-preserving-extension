@@ -1,17 +1,31 @@
 """
-compute_flops.py — FLOPs, MACs, and parameter count for all encoder variants.
+compute_flops.py -- FLOPs, MACs, and parameter count for all ARL encoder variants.
 
-Profiles each encoder on a single 224x224 image using thop and prints a
-comparison table with estimated inference latency on common edge devices.
+Profiles each encoder on a single input image using thop and prints:
+  1. Per-encoder MACs and parameter count
+  2. Comparison table with relative compute cost
+  3. Estimated inference latency on common edge devices (Jetson Nano, RPi 5, Coral TPU)
+
+Edge device throughput estimates are order-of-magnitude figures from vendor
+datasheets; real latency depends on memory bandwidth, quantisation, and batch
+size. Use benchmark_latency.py for measured ONNX Runtime latency.
+
+Results from this script informed the edge deployment analysis in Table VI
+of the project report and the <200ms Jetson Nano deployment target.
 
 Usage:
     python compute_flops.py
+    python compute_flops.py --img_size 64    # for VQ-VAE trained at 64px
 
 Requirements:
     pip install thop
 """
 
+import argparse
+from typing import Dict, List, Optional, Tuple
+
 import torch
+
 from models.get_encoder import get_encoder
 
 try:
@@ -21,17 +35,17 @@ except ImportError:
     print("ERROR: thop not installed. Run: pip install thop")
     HAS_THOP = False
 
-# Edge device throughput estimates (MACs/second, rough order-of-magnitude)
-# Sources: vendor datasheets and published benchmarks
-EDGE_DEVICES = {
+# Edge device throughput estimates (MACs/second, order-of-magnitude)
+# Sources: NVIDIA Jetson Nano datasheet, RPi foundation benchmarks, Google Coral docs
+EDGE_DEVICES: Dict[str, float] = {
     "Jetson Nano (4W)":    6e9,    # ~6 GMACs/s at 4W
     "Raspberry Pi 5":      2e9,    # ~2 GMACs/s
-    "Coral Edge TPU":      4e12,   # ~4 TMACs/s (INT8 only, FP32 shown as lower bound)
+    "Coral Edge TPU":      4e12,   # ~4 TMACs/s (INT8 only; FP32 shown as lower bound)
 }
 
-ENCODERS = [
+ENCODERS: List[Tuple[str, str]] = [
     ("vanilla_vae",           "Vanilla VAE"),
-    ("beta_vae",              "Beta-VAE (β=4)"),
+    ("beta_vae",              "Beta-VAE (b=4)"),
     ("residual_vae",          "Residual VAE"),
     ("beta_tc_vae",           "Beta-TC VAE"),
     ("disentangled_beta_vae", "Disentangled Beta-VAE"),
@@ -39,7 +53,8 @@ ENCODERS = [
 ]
 
 
-def profile_encoder(name, img_size=224):
+def profile_encoder(name: str, img_size: int = 224) -> Tuple[float, float]:
+    """Return (MACs, param_count) for the named encoder on a single image."""
     enc = get_encoder(name, img_size=img_size)
     enc.eval()
     x = torch.randn(1, 3, img_size, img_size)
@@ -47,23 +62,29 @@ def profile_encoder(name, img_size=224):
     return macs, params
 
 
-def latency_ms(macs, device_macs_per_sec):
+def latency_ms(macs: float, device_macs_per_sec: float) -> float:
+    """Estimate inference latency in milliseconds from MACs and device throughput."""
     return (macs / device_macs_per_sec) * 1000
 
 
-def main():
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Profile encoder FLOPs and MACs.")
+    parser.add_argument("--img_size", type=int, default=224,
+                        help="Input image resolution (default: 224). Use 64 for VQ-VAE.")
+    args = parser.parse_args()
+
     if not HAS_THOP:
         return
 
     print("\n" + "=" * 90)
-    print("  ENCODER SYSTEM CHARACTERISATION — FLOPs / MACs / Parameters")
-    print("  Input: single 224×224 RGB image")
+    print(f"  ENCODER SYSTEM CHARACTERISATION — FLOPs / MACs / Parameters")
+    print(f"  Input: single {args.img_size}×{args.img_size} RGB image")
     print("=" * 90)
 
     results = []
     for name, label in ENCODERS:
         try:
-            macs, params = profile_encoder(name)
+            macs, params = profile_encoder(name, img_size=args.img_size)
             results.append((name, label, macs, params))
             macs_str, params_str = clever_format([macs, params], "%.2f")
             print(f"\n  {label}")
