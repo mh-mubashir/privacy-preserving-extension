@@ -1,22 +1,25 @@
 """
-Smoke test for VanillaVAE and BetaVAE in the ARL pipeline.
-Runs on random tensors on CPU so no CelebA download needed.
+test_vanilla_beta_vae.py -- Smoke tests for VanillaVAE and BetaVAE in the ARL pipeline.
+
+Runs a full forward + backward pass on random CPU tensors.
+No CelebA download required.
 
 Checks:
-- output shape matches input (B, 3, 224, 224)
-- reconstruction values stay in [0, 1] (sigmoid output)
-- latent mu/logvar shapes are correct
-- enc_loss is not NaN after a full ARL forward+backward
+  - recon shape matches (B, 3, 224, 224)
+  - reconstruction values are in [0, 1]
+  - mu / logvar shapes are (B, latent_dim)
+  - ARL encoder loss is finite after a full forward + backward
 """
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from models.get_encoder import get_encoder
 from models.cifar_like.resnet import ResNet18
 
 
-def build_arl_models(encoder_name):
+def _build_arl_models(encoder_name: str):
     enc = get_encoder(encoder_name, img_size=224)
     clf = ResNet18()
     clf.linear = nn.Linear(512, 1)
@@ -25,9 +28,10 @@ def build_arl_models(encoder_name):
     return enc, clf, adv
 
 
-def run_arl_step(encoder_name):
+def _run_arl_step(encoder_name: str) -> None:
+    """One forward + backward pass through the ARL objective."""
     B = 4
-    enc, clf, adv = build_arl_models(encoder_name)
+    enc, clf, adv = _build_arl_models(encoder_name)
     enc.train(); clf.train(); adv.train()
 
     x = torch.rand(B, 3, 224, 224)
@@ -38,9 +42,10 @@ def run_arl_step(encoder_name):
 
     assert recon.shape == (B, 3, 224, 224), f"bad recon shape: {recon.shape}"
     assert mu.shape == (B, 256), f"bad mu shape: {mu.shape}"
-    assert logvar.shape == mu.shape
-    assert recon.min() >= 0.0 and recon.max() <= 1.0, \
-        f"recon out of range: [{recon.min():.3f}, {recon.max():.3f}]"
+    assert logvar.shape == mu.shape, "logvar shape mismatch"
+    assert recon.min() >= 0.0 and recon.max() <= 1.0, (
+        f"recon outside [0,1]: [{recon.min():.3f}, {recon.max():.3f}]"
+    )
 
     crit = nn.BCEWithLogitsLoss()
     loss_clf = crit(clf(recon).flatten(), y_util)
@@ -63,17 +68,28 @@ def run_arl_step(encoder_name):
 
 def test_vanilla_vae():
     print("Testing VanillaVAE...")
-    run_arl_step("vanilla_vae")
-    print("  OK\n")
+    _run_arl_step("vanilla_vae")
+    print("  PASSED\n")
 
 
 def test_beta_vae():
     print("Testing BetaVAE (beta=4.0)...")
-    run_arl_step("beta_vae")
-    print("  OK\n")
+    _run_arl_step("beta_vae")
+    print("  PASSED\n")
+
+
+def test_encoder_factory_all_vae_keys():
+    """Verify get_encoder instantiates all VAE variants without error."""
+    keys = ["vanilla_vae", "beta_vae", "residual_vae",
+            "cvae", "factor_vae", "beta_tc_vae", "disentangled_beta_vae"]
+    for key in keys:
+        enc = get_encoder(key, img_size=64)
+        assert enc is not None, f"get_encoder returned None for {key}"
+    print(f"  encoder factory: all {len(keys)} keys instantiated OK")
 
 
 if __name__ == "__main__":
     test_vanilla_vae()
     test_beta_vae()
+    test_encoder_factory_all_vae_keys()
     print("All tests passed.")
