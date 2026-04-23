@@ -1,3 +1,26 @@
+"""
+pythae_training.py -- Standalone VAE training via the Pythae library.
+
+Used during early development to prototype and validate VAE encoder behaviour
+(DisentangledBetaVAE, BetaTCVAE, FactorVAE) on CelebA before integrating
+custom ARL-compatible implementations into adversarial_training.py.
+Results served as reference baselines for hyperparameter selection.
+
+Supported variants:
+    disentangled_betavae  -- Beta-VAE with privacy latent bottleneck
+    betatcvae             -- Beta-TC VAE with analytic TC decomposition
+    factorvae             -- Factor VAE with adversarial TC discriminator
+
+Usage:
+    python pythae_training.py --variant betatcvae \
+        --data_source huggingface --hf_cache_dir ./hf_cache \
+        --img_size 64 --latent_dim 32 --beta 2.0 --gamma 5.0 \
+        --batch_size 32 --num_epochs 50
+
+Requirements:
+    pip install pythae datasets
+"""
+
 import argparse
 from pathlib import Path
 
@@ -30,6 +53,8 @@ from pythae.models import (
 from pythae.pipelines import TrainingPipeline
 from pythae.trainers import AdversarialTrainerConfig, BaseTrainerConfig
 
+
+# -- Data loading ---------------------------------------------------------------
 
 def build_celeba_dataloaders_torchvision(
     data_dir: str,
@@ -136,6 +161,8 @@ def build_celeba_dataloaders_hf(
     return train_loader, val_loader
 
 
+# -- Model construction ---------------------------------------------------------
+
 def build_pythae_model(
     variant: str,
     img_size: int,
@@ -172,6 +199,8 @@ def build_pythae_model(
 
     return model
 
+
+# -- Entry point ----------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
