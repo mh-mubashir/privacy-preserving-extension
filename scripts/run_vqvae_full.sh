@@ -35,7 +35,7 @@ PYTHONPATH="$REPO_DIR" python "$REPO_DIR/adversarial_training.py" \
   --max_train_samples 20000 \
   --max_val_samples 2000 \
   --max_test_samples 2000 \
-  --vae_weight 0.1 \
+  --vae_weight 0.5 \
   --vae_beta 1.0 \
   --lambda_clf 1.0 \
   --learning_rate_enc 0.0003 \

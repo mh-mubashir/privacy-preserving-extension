@@ -104,9 +104,9 @@ def get_encoder(encoder_name, img_size=224, **kwargs):
             h_dim=kwargs.get("h_dim", 128),
             res_h_dim=kwargs.get("res_h_dim", 32),
             n_res_layers=kwargs.get("n_res_layers", 2),
-            n_embeddings=kwargs.get("n_embeddings", 512),
+            n_embeddings=kwargs.get("n_embeddings", 256),
             embedding_dim=kwargs.get("embedding_dim", 64),
-            beta=kwargs.get("beta", 0.25),
+            beta=kwargs.get("beta", 0.5),
             img_size=img_size,
         )
 
