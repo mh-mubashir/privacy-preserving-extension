@@ -62,6 +62,37 @@ if __name__ == "__main__":
                         help='Epochs to train encoder+classifier only before introducing the adversary. '
                              'Recommended: 3-5. During warmup the adversary is not updated and does not '
                              'affect the encoder, so utility is learned first.')
+    parser.add_argument('--latent_adv', action='store_true',
+                        help='Run adversary on latent z instead of reconstructed image. '
+                             'More direct privacy enforcement at the representation level.')
+    parser.add_argument('--adv_steps', type=int, default=1,
+                        help='Adversary update steps per encoder step (default 1). '
+                             'Higher values (e.g. 5) give adversary more time to strengthen, '
+                             'increasing pressure on the encoder to suppress private attributes.')
+    parser.add_argument('--latent_dim', type=int, default=256,
+                        help='Latent dimension for VAE encoders. '
+                             'Smaller values (e.g. 32) create a tighter information bottleneck '
+                             'and reduce the capacity to encode private attributes.')
+    parser.add_argument('--freeze_clf', action='store_true',
+                        help='Alternating optimisation (ARL phase only): encoder step first, then '
+                             'utility-classifier step on detached reconstructions. Stops clf from '
+                             'sharing one backward with the encoder (professor co-adaptation concern).')
+    parser.add_argument('--freeze_utility_clf_arl', action='store_true',
+                        help='During ARL (after warmup), do not update the utility classifier at all — '
+                             'only the encoder/decoder and adversary train. The smile head stays fixed '
+                             'while the encoder is pushed for privacy; gradients from utility loss still '
+                             'flow into the encoder through the clf forward pass. Addresses: "classifier '
+                             'keeps improving with the decoder." Mutually exclusive with --freeze_clf '
+                             'during ARL; if both are set, --freeze_utility_clf_arl wins.')
+    parser.add_argument('--cycle_utility_epochs', type=int, default=0,
+                        help='After warmup, repeat macro-phases: this many consecutive epochs of '
+                             'utility-only training (same as warmup: no adv in encoder loss, no adv '
+                             'weight updates). Use with --cycle_arl_epochs > 0.')
+    parser.add_argument('--cycle_arl_epochs', type=int, default=0,
+                        help='After warmup, each cycle ends with this many full ARL epochs '
+                             '(adversary active). Requires --cycle_utility_epochs > 0. '
+                             'Example: --cycle_utility_epochs 1 --cycle_arl_epochs 1 alternates '
+                             'utility / ARL every epoch after warmup.')
     parser.add_argument('--exp_name', type=str, default='celeb')
     args = parser.parse_args()
 
@@ -165,8 +196,10 @@ if __name__ == "__main__":
     val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=False, num_workers=nw)
     test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=nw)
 
+    latent_dim = args.latent_dim
+
     # Encoder: unet, cvae, or factor_vae (3ch in -> 3ch out for ResNet)
-    encoder_model = get_encoder(encoder_name, img_size, unet_size=unet_size)
+    encoder_model = get_encoder(encoder_name, img_size, unet_size=unet_size, latent_dim=latent_dim)
     if torch.cuda.device_count() > 1:
         encoder_model = nn.DataParallel(encoder_model)
     encoder_model = encoder_model.to(device)
@@ -179,8 +212,18 @@ if __name__ == "__main__":
     clf_model = clf_model.to(device)
 
     # Adversary (predicts private attribute)
-    adv_model = ResNet18()
-    adv_model.linear = nn.Linear(512, 1)
+    # If --latent_adv: lightweight MLP on latent z (128-dim)
+    # Otherwise: ResNet18 on reconstructed image
+    use_latent_adv = args.latent_adv
+    if use_latent_adv:
+        adv_model = nn.Sequential(
+            nn.Linear(latent_dim, 256), nn.ReLU(),
+            nn.Linear(256, 128),        nn.ReLU(),
+            nn.Linear(128, 1)
+        )
+    else:
+        adv_model = ResNet18()
+        adv_model.linear = nn.Linear(512, 1)
     if torch.cuda.device_count() > 1:
         adv_model = nn.DataParallel(adv_model)
     adv_model = adv_model.to(device)
@@ -213,14 +256,77 @@ if __name__ == "__main__":
         })
 
     warmup_epochs = args.warmup_epochs
+    adv_steps     = args.adv_steps
+    freeze_utility_arl = args.freeze_utility_clf_arl
+    freeze_clf_alt = args.freeze_clf and not freeze_utility_arl
+    if args.freeze_clf and freeze_utility_arl:
+        print("Note: --freeze_clf ignored during ARL because --freeze_utility_clf_arl is set.", flush=True)
     if warmup_epochs > 0:
         print(f"Two-phase training: {warmup_epochs} warmup epoch(s) (utility only) "
               f"then {num_epochs} ARL epoch(s) (utility + privacy adversary)", flush=True)
+    print(
+        "Training heads: utility clf = smile (ResNet on recon); adversary = gender "
+        "(ResNet or MLP on recon or z). Adversary is always updated on DETACHED tensors — "
+        "its optimiser never steps encoder weights.",
+        flush=True,
+    )
+    if freeze_utility_arl:
+        print(
+            "ARL utility-clf mode: FROZEN WEIGHTS (--freeze_utility_clf_arl). After warmup, "
+            "the smile classifier is not updated; encoder still gets smile gradients through clf. "
+            "Matches professor feedback: the smile head no longer 'rides along' as the decoder improves. "
+            "The gender adversary still trains each batch on detached reconstructions (standard ARL).",
+            flush=True,
+        )
+    elif freeze_clf_alt:
+        print(
+            "ARL utility-clf mode: ALTERNATING (--freeze_clf). Encoder step, then clf step on "
+            "detached recon — clf gradients never update encoder in the clf step.",
+            flush=True,
+        )
+    else:
+        print(
+            "ARL utility-clf mode: JOINT (baseline). Encoder and utility clf share one backward "
+            "from (loss_clf - lambda*loss_adv + VAE); both optimisers step together.",
+            flush=True,
+        )
+
+    cycle_u = max(0, int(getattr(args, 'cycle_utility_epochs', 0) or 0))
+    cycle_a = max(0, int(getattr(args, 'cycle_arl_epochs', 0) or 0))
+    use_macro_cycles = cycle_u > 0 and cycle_a > 0
+    if (cycle_u > 0) ^ (cycle_a > 0):
+        raise ValueError(
+            'Use both --cycle_utility_epochs and --cycle_arl_epochs as positive integers '
+            'to enable macro cycling, or set both to 0 (default).',
+        )
+    if use_macro_cycles:
+        print(
+            f"Macro cycling after warmup: {cycle_u} epoch(s) utility-only, then {cycle_a} epoch(s) "
+            f"full ARL, repeating until training ends.",
+            flush=True,
+        )
 
     num_batches = len(train_loader)
     for epoch in range(num_epochs):
         in_warmup = epoch < warmup_epochs
-        phase_label = f"[WARMUP {epoch+1}/{warmup_epochs}]" if in_warmup else f"[Epoch {epoch+1-warmup_epochs}/{num_epochs-warmup_epochs}]"
+        rel_after_warmup = epoch - warmup_epochs
+        if use_macro_cycles and (not in_warmup) and rel_after_warmup >= 0:
+            pos = rel_after_warmup % (cycle_u + cycle_a)
+            in_cycle_utility = pos < cycle_u
+        else:
+            in_cycle_utility = False
+        in_pure_utility = in_warmup or in_cycle_utility
+
+        if in_warmup:
+            phase_label = f"[WARMUP {epoch+1}/{warmup_epochs}]"
+        elif use_macro_cycles:
+            pos = rel_after_warmup % (cycle_u + cycle_a)
+            if pos < cycle_u:
+                phase_label = f"[CYCLE-UTIL {pos+1}/{cycle_u} | global epoch {epoch+1}]"
+            else:
+                phase_label = f"[CYCLE-ARL {pos - cycle_u + 1}/{cycle_a} | global epoch {epoch+1}]"
+        else:
+            phase_label = f"[Epoch {epoch+1-warmup_epochs}/{num_epochs-warmup_epochs}]"
 
         encoder_model.train()
         adv_model.train()
@@ -260,25 +366,31 @@ if __name__ == "__main__":
             loss_clf = criterion(u_logits, targets_u)
             loss_adv = criterion(p_logits, targets_adv)
 
-            # Adversary signal for encoder: use a no-grad forward so ARL sees a fixed adversary
+            # Choose adversary input: latent z or reconstructed image
+            z_for_adv = mu if (use_latent_adv and encoder_name in
+                               ('vanilla_vae','beta_vae','residual_vae',
+                                'beta_tc_vae','disentangled_beta_vae')) else blurred
+
+            # Adversary signal for encoder: no-grad forward on fixed adversary
             with torch.no_grad():
-                adv_logits_enc = adv_model(blurred).flatten()
+                adv_logits_enc = adv_model(z_for_adv).flatten()
                 loss_adv_enc = criterion(adv_logits_enc, targets_adv)
 
-            # Adversary update — skipped during warmup so utility is learned first
+            # Adversary update — skipped during warmup, multiple steps if --adv_steps > 1
             loss_adv = torch.tensor(0.0, device=device)
-            if not in_warmup:
-                blurred_detached = blurred.detach()
-                p_logits_adv = adv_model(blurred_detached).flatten()
-                loss_adv = criterion(p_logits_adv, targets_adv)
-                optimizer_adv.zero_grad()
-                loss_adv.backward()
-                optimizer_adv.step()
+            if not in_pure_utility:
+                for _ in range(adv_steps):
+                    adv_input = z_for_adv.detach()
+                    p_logits_adv = adv_model(adv_input).flatten()
+                    loss_adv = criterion(p_logits_adv, targets_adv)
+                    optimizer_adv.zero_grad()
+                    loss_adv.backward()
+                    optimizer_adv.step()
 
             # Encoder + utility classifier objective
             # During warmup: pure utility loss only (no adversary pressure)
             # During ARL:    utility loss - lambda * adversary loss
-            if in_warmup:
+            if in_pure_utility:
                 arl_loss = loss_clf
             else:
                 arl_loss = loss_clf - lambda_clf * loss_adv_enc
@@ -305,18 +417,68 @@ if __name__ == "__main__":
             else:
                 enc_loss = arl_loss
 
-            optimizer_enc.zero_grad()
-            optimizer_clf.zero_grad()
-            enc_loss.backward()
-            torch.nn.utils.clip_grad_norm_(encoder_model.parameters(), max_norm=1.0)
-            torch.nn.utils.clip_grad_norm_(clf_model.parameters(), max_norm=1.0)
-            if torch.isnan(enc_loss):
-                print(f"  WARNING: NaN enc_loss at step {i+1}, skipping update", flush=True)
+            if in_pure_utility:
+                # Warmup or macro utility phase: train smile head with encoder (no adversary in loss).
                 optimizer_enc.zero_grad()
                 optimizer_clf.zero_grad()
+                enc_loss.backward()
+                torch.nn.utils.clip_grad_norm_(encoder_model.parameters(), max_norm=1.0)
+                torch.nn.utils.clip_grad_norm_(clf_model.parameters(), max_norm=1.0)
+                if torch.isnan(enc_loss):
+                    print(f"  WARNING: NaN enc_loss at step {i+1}, skipping update", flush=True)
+                    optimizer_enc.zero_grad()
+                    optimizer_clf.zero_grad()
+                else:
+                    optimizer_enc.step()
+                    optimizer_clf.step()
+            elif freeze_utility_arl:
+                # ARL: professor-style — do not update utility clf weights; encoder still
+                # minimises smile loss through clf(blurred), so gradients reach encoder only.
+                optimizer_enc.zero_grad()
+                optimizer_clf.zero_grad()
+                enc_loss.backward()
+                torch.nn.utils.clip_grad_norm_(encoder_model.parameters(), max_norm=1.0)
+                for p in clf_model.parameters():
+                    if p.grad is not None:
+                        p.grad = None
+                if torch.isnan(enc_loss):
+                    print(f"  WARNING: NaN enc_loss at step {i+1}, skipping encoder update", flush=True)
+                    optimizer_enc.zero_grad()
+                else:
+                    optimizer_enc.step()
+            elif freeze_clf_alt:
+                # ARL: alternating — encoder step, then clf on detached recon.
+                optimizer_enc.zero_grad()
+                enc_loss.backward()
+                torch.nn.utils.clip_grad_norm_(encoder_model.parameters(), max_norm=1.0)
+                if torch.isnan(enc_loss):
+                    print(f"  WARNING: NaN enc_loss at step {i+1}, skipping encoder update", flush=True)
+                    optimizer_enc.zero_grad()
+                else:
+                    optimizer_enc.step()
+
+                blurred_clf = blurred.detach()
+                u_logits_frz = clf_model(blurred_clf).flatten()
+                loss_clf_frz = criterion(u_logits_frz, targets_u)
+                optimizer_clf.zero_grad()
+                loss_clf_frz.backward()
+                torch.nn.utils.clip_grad_norm_(clf_model.parameters(), max_norm=1.0)
+                if not torch.isnan(loss_clf_frz):
+                    optimizer_clf.step()
             else:
-                optimizer_enc.step()
-                optimizer_clf.step()
+                # ARL: joint baseline — encoder + utility clf one backward.
+                optimizer_enc.zero_grad()
+                optimizer_clf.zero_grad()
+                enc_loss.backward()
+                torch.nn.utils.clip_grad_norm_(encoder_model.parameters(), max_norm=1.0)
+                torch.nn.utils.clip_grad_norm_(clf_model.parameters(), max_norm=1.0)
+                if torch.isnan(enc_loss):
+                    print(f"  WARNING: NaN enc_loss at step {i+1}, skipping update", flush=True)
+                    optimizer_enc.zero_grad()
+                    optimizer_clf.zero_grad()
+                else:
+                    optimizer_enc.step()
+                    optimizer_clf.step()
 
             running_loss_clf += loss_clf.item()
             running_loss_adv += loss_adv.item()
@@ -327,8 +489,11 @@ if __name__ == "__main__":
                 running_loss_adv = 0.0
 
         scheduler_enc.step()
-        scheduler_clf.step()
-        scheduler_adv.step()
+        # Only advance clf LR schedule when clf optimiser actually ran this epoch.
+        if in_pure_utility or not freeze_utility_arl:
+            scheduler_clf.step()
+        if not in_pure_utility:
+            scheduler_adv.step()
 
         # Validation
         encoder_model.eval()
@@ -347,10 +512,18 @@ if __name__ == "__main__":
 
                 if encoder_name == 'cvae':
                     blurred = encoder_model(inputs, targets_u)
+                    z_val = blurred
+                elif encoder_name in ('vanilla_vae','beta_vae','residual_vae',
+                                      'beta_tc_vae','disentangled_beta_vae'):
+                    recon_v, mu_v, _, _ = encoder_model(inputs, return_aux=True)
+                    blurred = recon_v
+                    z_val = mu_v
                 else:
                     blurred = encoder_model(inputs)
+                    z_val = blurred
                 logits_u = clf_model(blurred).flatten()
-                adv_logits = adv_model(blurred).flatten()
+                adv_in   = z_val if use_latent_adv else blurred
+                adv_logits = adv_model(adv_in).flatten()
 
                 loss_clf = criterion(logits_u, targets_u)
                 loss_adv = criterion(adv_logits, targets_adv)
@@ -413,10 +586,18 @@ if __name__ == "__main__":
 
             if encoder_name == 'cvae':
                 blurred = encoder_model(inputs, targets_u)
+                z_test = blurred
+            elif encoder_name in ('vanilla_vae','beta_vae','residual_vae',
+                                  'beta_tc_vae','disentangled_beta_vae'):
+                recon_t, mu_t, _, _ = encoder_model(inputs, return_aux=True)
+                blurred = recon_t
+                z_test = mu_t
             else:
                 blurred = encoder_model(inputs)
+                z_test = blurred
             logits_u = clf_model(blurred).flatten()
-            adv_logits = adv_model(blurred).flatten()
+            adv_in_t = z_test if use_latent_adv else blurred
+            adv_logits = adv_model(adv_in_t).flatten()
 
             pred_u = (torch.sigmoid(logits_u) > 0.5).float()
             pred_adv = (torch.sigmoid(adv_logits) > 0.5).float()

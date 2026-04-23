@@ -1,0 +1,53 @@
+{
+  "encoder": "vanilla_vae",
+  "exp_name": "p2_vanillavae_lam2_13e_20k",
+  "n_test": 2000,
+  "utility_acc": 87.5,
+  "privacy_acc": 88.6,
+  "utility_auc": 0.9454,
+  "privacy_auc": 0.9475,
+  "utility_f1": 0.8799,
+  "nag": 0.9715,
+  "cm_utility": [
+    [
+      834,
+      87
+    ],
+    [
+      163,
+      916
+    ]
+  ],
+  "cm_privacy": [
+    [
+      1393,
+      130
+    ],
+    [
+      98,
+      379
+    ]
+  ],
+  "privacy_at_k_utility": {
+    "70": {
+      "threshold": 0.04,
+      "utility_acc": 70.75,
+      "privacy_acc": 67.15
+    },
+    "75": {
+      "threshold": 0.059,
+      "utility_acc": 76.05,
+      "privacy_acc": 71.8
+    },
+    "80": {
+      "threshold": 0.089,
+      "utility_acc": 80.0,
+      "privacy_acc": 77.2
+    },
+    "85": {
+      "threshold": 0.187,
+      "utility_acc": 85.0,
+      "privacy_acc": 83.2
+    }
+  }
+}
