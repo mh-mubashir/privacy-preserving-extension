@@ -1,5 +1,26 @@
 """
-make_charts.py — Generate all charts and visual assets for the presentation.
+make_charts.py -- Generate all charts and visual assets for the project report.
+
+Produces five bar/line charts and two image assets, all written to docs/charts/:
+
+  chart_utility_privacy.png  -- Grouped bar: utility vs privacy accuracy per model
+  chart_nag.png              -- Horizontal bar: NAG score ranking (higher = better balance)
+  chart_lambda_sweep.png     -- Line: privacy-utility trade-off as lambda varies (1/2/3)
+  chart_auc.png              -- Grouped bar: AUC-ROC for utility and privacy classifiers
+  chart_bottleneck.png       -- Bar: latent_dim ablation on ResidualVAE (dim 32/64/256)
+  recon_vanillavae.png       -- Collage: VanillaVAE reconstruction at epoch 1 vs epoch 10
+  recon_betavae.png          -- Collage: BetaVAE reconstruction at epoch 1 vs epoch 10
+  netron_vanilla_vs_residual.png -- Side-by-side Netron ONNX architecture diagrams
+
+Data source: hardcoded evaluation results from Table II/III of the project report
+(two-phase ARL training, lambda=2, CelebA 20k subset, utility=smile, privacy=gender).
+Image inputs for collages come from visuals/ and docs/netron_graphs/.
+
+Usage:
+    python make_charts.py
+
+Requirements:
+    pip install matplotlib numpy Pillow
 """
 import matplotlib
 matplotlib.use('Agg')

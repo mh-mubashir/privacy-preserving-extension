@@ -1,31 +1,29 @@
-# Core dependencies for privacy-preserving adversarial training
-# Python 3.9+ recommended
+# Privacy-Preserving Edge Vision -- Python dependencies
+# Python 3.9+ recommended. Install with: pip install -r requirements.txt
+#
+# GPU note: install PyTorch with CUDA wheels separately from pytorch.org
+# e.g. CUDA 12.8: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 
+# --- Core ---
 torch>=2.0.0
 torchvision>=0.15.0
 numpy>=1.21.0
 
-# Optional: VAE variants and training utilities (DisentangledBetaVAE, BetaTCVAE, etc.)
-# Used by pythae-based training scripts.
-pythae>=0.1.0
+# --- Evaluation (evaluate.py) ---
+scikit-learn>=1.0.0       # roc_auc_score, f1_score, confusion_matrix
 
-# Optional: for Weights & Biases logging (--use_wandb)
-wandb>=0.15.0
+# --- CelebA via HuggingFace (--data_source huggingface) ---
+datasets>=2.0.0            # flwrlabs/celeba dataset
+Pillow>=9.0.0              # image decoding for HF CelebA rows
 
-# Optional: for CelebA automatic download (--download)
-# gdown>=4.7.0
+# --- Compute profiling (compute_flops.py, export_onnx.py, benchmark_latency.py) ---
+thop>=0.1.0                # MACs / parameter count
+onnx>=1.14.0               # ONNX export (export_onnx.py)
+onnxruntime>=1.16.0        # CPU latency benchmarking (benchmark_latency.py)
 
-# Optional: for CelebA automatic download (--download)
-# gdown>=4.6.0
+# --- Pythae prototyping (pythae_training.py) ---
+pythae>=0.1.0              # DisentangledBetaVAE, BetaTCVAE, FactorVAE variants
 
-# Evaluation metrics (evaluate.py)
-scikit-learn>=1.0.0
-
-# FLOPs/MACs profiling (compute_flops.py)
-thop>=0.1.0
-
-# HuggingFace datasets for CelebA loading
-datasets>=2.0.0
-
-# Optional: for MACs/FLOPs profiling (models/unet.py __main__)
-# torchprofile>=0.1.0
+# --- Optional ---
+wandb>=0.15.0              # Weights & Biases logging (--use_wandb)
+# gdown>=4.7.0             # CelebA download via torchvision (--download); may hit quota

@@ -1,23 +1,33 @@
 """
-export_onnx.py — Export all encoder variants to ONNX format.
+export_onnx.py -- Export all ARL encoder variants to ONNX format.
 
-ONNX files can be uploaded to online profiling tools such as:
-  - https://netron.app          (visualize network structure)
-  - https://onnxinsights.com    (online ONNX profiler)
-  - https://nn-meter.microsoft.com (latency prediction for edge devices)
-  - https://onn-fpo.ml          (FP ops counter)
+Exports a single 224x224 (or --img_size) forward pass for each encoder.
+Dynamic batch axis is enabled so the exported model accepts any batch size
+at inference time. Outputs land in --out_dir (default: ./onnx_exports/).
+
+ONNX files are used by:
+  - compute_flops.py / benchmark_latency.py for latency profiling
+  - Netron (https://netron.app) for architecture visualisation
+  - nn-Meter (https://nn-meter.microsoft.com) for edge latency estimates
 
 Usage:
-    python export_onnx.py [--out_dir ./onnx_exports] [--img_size 224]
+    python export_onnx.py
+    python export_onnx.py --out_dir ./onnx_exports --img_size 224
+
+Requirements:
+    pip install torch onnx
 """
 
 import argparse
 import os
+from typing import List
+
 import torch
+
 from models.get_encoder import get_encoder
 
 
-ENCODERS = [
+ENCODERS: List[str] = [
     "vanilla_vae",
     "beta_vae",
     "residual_vae",
@@ -27,7 +37,8 @@ ENCODERS = [
 ]
 
 
-def export(name: str, img_size: int, out_dir: str):
+def export_encoder(name: str, img_size: int, out_dir: str) -> None:
+    """Export a single encoder to ONNX, skipping if the file already exists."""
     out_path = os.path.join(out_dir, f"{name}.onnx")
     if os.path.exists(out_path):
         print(f"  [skip]  {name}.onnx already exists")
@@ -52,24 +63,35 @@ def export(name: str, img_size: int, out_dir: str):
         print(f"  [error] {name}: {exc}")
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--out_dir", type=str, default="./onnx_exports")
-    parser.add_argument("--img_size", type=int, default=224)
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Export ARL encoders to ONNX")
+    parser.add_argument(
+        "--out_dir",
+        type=str,
+        default="./onnx_exports",
+        help="Directory to write .onnx files (created if absent)",
+    )
+    parser.add_argument(
+        "--img_size",
+        type=int,
+        default=224,
+        help="Spatial resolution of the dummy input (use 64 for VQ-VAE trained at 64px)",
+    )
     args = parser.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
-    print(f"\nExporting encoders to ONNX  (img_size={args.img_size})  →  {args.out_dir}/\n")
+    print(f"\nExporting {len(ENCODERS)} encoders to ONNX  "
+          f"(img_size={args.img_size})  ->  {args.out_dir}/\n")
 
     for name in ENCODERS:
-        export(name, args.img_size, args.out_dir)
+        export_encoder(name, args.img_size, args.out_dir)
 
     onnx_files = [f for f in os.listdir(args.out_dir) if f.endswith(".onnx")]
-    print(f"\n{len(onnx_files)} ONNX file(s) written to {args.out_dir}/")
-    print("\nNext steps — upload to one of these free online tools:")
-    print("  Netron visualizer     : https://netron.app")
-    print("  nn-Meter (Microsoft)  : https://nn-meter.microsoft.com")
-    print("  ONNX Model Zoo runner : https://onnxinsights.com")
+    print(f"\n{len(onnx_files)} ONNX file(s) in {args.out_dir}/")
+    print("\nNext steps:")
+    print("  Visualise architecture : python -c \"import netron; netron.start('<file>.onnx')\"")
+    print("  Latency benchmark      : python benchmark_latency.py --onnx_dir", args.out_dir)
+    print("  Online viewer          : https://netron.app")
 
 
 if __name__ == "__main__":
