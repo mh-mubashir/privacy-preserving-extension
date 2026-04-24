@@ -22,6 +22,9 @@ dist/
 *.swp
 *.swo
 
+# Cursor / agent artifacts
+.claude/
+
 # Model checkpoints (optional: remove if you want to track them)
 *.pt
 *.pth
@@ -44,6 +47,9 @@ docs/charts/
 
 # PDFs
 *.pdf
+
+# LaTeX report source (kept locally, not tracked in repo)
+report.tex
 
 # Intermediate reconstruction frames (keep only epoch01 and epoch10)
 visuals/*epoch0[2-9].png
