@@ -238,6 +238,22 @@ Full results and ablations in `results/eval_summary.csv` and `Report.pdf`.
 
 ---
 
+## Best model checkpoint (weights)
+
+Per the course submission checklist, we identify a “best” model by the
+reported privacy--utility trade-off in our evaluations:
+
+- **Post-feedback best trade-off (alternate protocol)**: VQ-VAE
+  `member3_vqvae_10e_20k` (see `results/eval_member3_vqvae_10e_20k.json`).
+- **Matched-protocol best trade-off (main sweep)**: ResidualVAE by NAG
+  (see `results/eval_summary.csv` and the report tables).
+
+To keep the repository lightweight, large `.pt/.pth` weight files are not
+committed by default. See `checkpoints/README.md` for reproduction and options
+to distribute weights (Git LFS / release artifacts).
+
+---
+
 ## Team
 
 | Member | Branch | Contributions |
