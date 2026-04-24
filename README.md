@@ -2,6 +2,12 @@
 
 A systematic study of VAE encoder architectures for privacy-preserving face analysis on CelebA. The system trains an encoder that reliably detects smiling while preventing downstream models from inferring gender from the same representation.
 
+After the initial architecture sweep, we incorporated instructor feedback from
+the project presentation and follow-up course discussions by running additional
+experiments (full-split Privacy-at-\(K\) evaluation, two-phase training
+variants, and a stabilized VQ-VAE recipe) and updating the codebase/reporting
+to better reflect operating-point privacy behavior.
+
 **Task mapping (CelebA attributes):**
 - Utility: attribute 31 — Smiling (want high accuracy)
 - Privacy: attribute 20 — Male (want accuracy near 50%, i.e. random chance)
@@ -36,6 +42,11 @@ A systematic study of VAE encoder architectures for privacy-preserving face anal
 ├── docs/                     # Architecture analysis, Netron graphs
 └── requirements.txt
 ```
+
+Post-feedback additions are reflected directly in the repository: operating-point
+evaluation (`--k_levels` / Privacy-at-\(K\)), training schedule controls
+(warmup + ARL, freezing/cycling flags), and the scripts used to batch-evaluate
+all archived checkpoints on the full CelebA test split.
 
 ---
 
@@ -235,6 +246,32 @@ Main protocol: 224x224, wvae=0.1, 10 ARL epochs, 20k training samples.
 | FactorVAE | 87.0 | 88.7 | 0.956 |
 
 Full results and ablations in `results/eval_summary.csv` and `Report.pdf`.
+
+---
+
+## Post-feedback: Privacy at K% Utility (operating-point analysis)
+
+Based on instructor feedback and our in-course discussions, we report an
+operating-point metric that is more informative than a single default-threshold
+accuracy. **Privacy at K% Utility** sweeps the smile decision threshold so that
+utility is constrained to approximately \(K\in\{70,75,80,85\}\%\), then reports
+gender accuracy at that operating point (lower is better; 50% is random chance).
+
+These results were produced by a **post-presentation full-split evaluation**
+on the full CelebA test set (\(n=19{,}962\)) and are summarized in the report
+(Table “Privacy at K% utility”).
+
+| Checkpoint | Priv@70 | Priv@75 | Priv@80 | Priv@85 |
+|---|---:|---:|---:|---:|
+| VanillaVAE (`member1_vanillavae_10e_20k`) | 63.69 | 66.82 | 71.99 | 82.07 |
+| ResidualVAE (`member1_residualvae_10e_20k`) | 63.22 | 65.88 | 71.84 | 83.19 |
+| VQ-VAE (revised protocol, Member 3) | **38.65** | **38.70** | **39.01** | **42.70** |
+
+Takeaway: while default-threshold privacy accuracies can sit in the mid/high
+80s for matched-protocol models, **gender leakage drops substantially at lower
+utility operating points** (e.g. \(\sim\)63% at \(K=70\%\) for Vanilla/Residual),
+and the revised VQ-VAE recipe approaches random chance across \(K\) levels
+(alternate protocol).
 
 ---
 
